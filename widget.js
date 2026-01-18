@@ -1530,6 +1530,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function setupEventListeners() {
+  // 로딩 인디케이터 초기화
+  const loading = document.getElementById('loading');
+  if (loading) {
+    loading.title = '작업 로그';
+  }
+
   const viewToggle = document.getElementById('view-toggle');
   viewToggle.addEventListener('click', () => {
     if (calendarViewMode) {
@@ -1563,8 +1569,7 @@ function setupEventListeners() {
 }
 
 async function fetchData(retryCount = 0) {
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
+  startLoading('플래너 데이터 로드');
 
   try {
     // 오늘 기준 앞뒤 날짜 계산 (빠른 초기 로드용)
@@ -1621,6 +1626,7 @@ async function fetchData(retryCount = 0) {
     // 렌더링
     renderData();
     updateLastUpdateTime();
+    completeLoading('플래너 데이터 로드');
   } catch (error) {
     console.error('Error:', error);
 
@@ -1649,8 +1655,7 @@ async function fetchData(retryCount = 0) {
 
     document.getElementById('content').innerHTML =
       `<div class="empty-message" style="white-space: pre-line;">❌ 오류\n\n${errorMessage}</div>`;
-  } finally {
-    loading.textContent = '';
+    completeLoading('플래너 데이터 로드 실패');
   }
 }
 
