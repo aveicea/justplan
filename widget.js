@@ -3036,7 +3036,9 @@ function renderCalendarView() {
   const todayDate = new Date();
   const today = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;
 
-  let html = ``;
+  let html = `
+    <button onclick="loadPrevCalendar()" style="width: 100%; background: #e5e5e7; color: #333; border: none; border-radius: 4px; padding: 8px; font-size: 11px; cursor: pointer; margin-bottom: 12px;">더보기</button>
+  `;
 
   allDates.forEach(dateStr => {
     const items = groupedByDate[dateStr] || [];
@@ -3083,8 +3085,8 @@ function renderCalendarView() {
 
         html += `
           <div class="calendar-item" data-id="${item.id}" data-date="${dateStr}" style="position: relative; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div class="drag-handle" style="position: absolute; left: 0; top: 0; bottom: 0; width: 80px; cursor: move; opacity: 0; user-select: none; -webkit-user-select: none; touch-action: none;"></div>
-            <div style="font-size: 12px; color: #333; flex: 1;">${displayTitle}</div>
+            <div class="drag-handle" style="position: absolute; left: 0; top: 0; bottom: 0; width: 24px; cursor: grab; background: transparent; border-right: 2px solid #e5e5e7; user-select: none; -webkit-user-select: none; touch-action: none; display: flex; align-items: center; justify-content: center; color: #ccc; font-size: 16px;">⋮⋮</div>
+            <div style="font-size: 12px; color: #333; flex: 1; cursor: pointer; margin-left: 32px;" onclick="editTask('${item.id}')">${displayTitle}</div>
             <div class="checkbox ${completed ? 'checked' : ''}" style="pointer-events: none; margin-left: 8px;">
               ${completed ? '✓' : ''}
             </div>
@@ -3098,6 +3100,10 @@ function renderCalendarView() {
       </div>
     `;
   });
+
+  html += `
+    <button onclick="loadNextCalendar()" style="width: 100%; background: #e5e5e7; color: #333; border: none; border-radius: 4px; padding: 8px; font-size: 11px; cursor: pointer; margin-top: 4px;">더보기</button>
+  `;
 
   content.innerHTML = html;
   initCalendarDragDrop();
@@ -3137,6 +3143,9 @@ function initCalendarDragDrop() {
       draggedItem.style.opacity = '1';
       draggedItem.style.position = '';
       draggedItem.style.zIndex = '';
+
+      const handle = draggedItem.querySelector('.drag-handle');
+      if (handle) handle.style.cursor = 'grab';
 
       // 마우스 종료 위치의 그룹 찾기
       const touchedElement = document.elementFromPoint(e.clientX, e.clientY);
@@ -3188,6 +3197,7 @@ function initCalendarDragDrop() {
       item.style.opacity = '0.5';
       item.style.position = 'relative';
       item.style.zIndex = '1000';
+      handle.style.cursor = 'grabbing';
       e.preventDefault();
     });
 
