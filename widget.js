@@ -18,9 +18,47 @@ let lastSyncedItems = []; // 마지막 동기화로 생성된 항목 ID들
 let dDayDate = localStorage.getItem('dDayDate') || null; // D-Day 날짜
 let dDayTitle = localStorage.getItem('dDayTitle') || null; // D-Day 제목
 let refreshTimer = null; // 디바운스용 타이머
+let renderTimer = null; // 렌더링 디바운스용 타이머
+let renderDataTimer = null; // 플래너 렌더링 디바운스용 타이머
 let undoStack = []; // 실행 취소 스택
 let redoStack = []; // 다시 실행 스택
 const MAX_HISTORY = 50; // 최대 히스토리 개수
+let loadingLogs = []; // 로딩 로그
+let loadingCount = 0; // 진행중인 작업 수
+
+// 로딩 로그 관리
+function startLoading(message) {
+  loadingCount++;
+  const timestamp = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+  loadingLogs.push(`[${timestamp}] ${message}...`);
+  updateLoadingIndicator();
+}
+
+function completeLoading(message) {
+  loadingCount = Math.max(0, loadingCount - 1);
+  const timestamp = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+  loadingLogs.push(`[${timestamp}] ✓ ${message}`);
+
+  // 최대 20개까지만 유지
+  if (loadingLogs.length > 20) {
+    loadingLogs = loadingLogs.slice(-20);
+  }
+
+  updateLoadingIndicator();
+}
+
+function updateLoadingIndicator() {
+  const loading = document.getElementById('loading');
+  if (!loading) return;
+
+  if (loadingCount > 0) {
+    loading.textContent = '⏳';
+    loading.title = loadingLogs.slice(-10).join('\n'); // 최근 10개만 툴팁에 표시
+  } else {
+    loading.textContent = '';
+    loading.title = loadingLogs.slice(-10).join('\n');
+  }
+}
 
 // 히스토리에 작업 추가
 function addToHistory(action) {
@@ -154,6 +192,26 @@ function scheduleRefresh() {
     fetchAllData();
     refreshTimer = null;
   }, 2000); // 2초 후 새로고침
+}
+
+function scheduleRender() {
+  if (renderTimer) {
+    clearTimeout(renderTimer);
+  }
+  renderTimer = setTimeout(() => {
+    renderCalendarView();
+    renderTimer = null;
+  }, 500); // 0.5초 후 렌더링
+}
+
+function scheduleRenderData() {
+  if (renderDataTimer) {
+    clearTimeout(renderDataTimer);
+  }
+  renderDataTimer = setTimeout(() => {
+    renderData();
+    renderDataTimer = null;
+  }, 300); // 0.3초 후 렌더링
 }
 
 // 전역 함수 등록
@@ -1033,13 +1091,15 @@ window.cancelAddTask = function() {
 };
 
 window.toggleComplete = async function(taskId, completed) {
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
-
   // 백업
   const task = currentData.results.find(t => t.id === taskId);
   if (!task) return;
   const originalCompleted = task.properties['완료'].checkbox;
+
+  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
+  const action = completed ? '완료 처리' : '미완료 처리';
+
+  startLoading(`${taskTitle} ${action}`);
 
   // 히스토리에 추가
   addToHistory({
@@ -1049,22 +1109,23 @@ window.toggleComplete = async function(taskId, completed) {
     after: { '완료': { checkbox: completed } }
   });
 
-  // UI 즉시 업데이트
+  // UI 업데이트 (debounced)
   task.properties['완료'].checkbox = completed;
-  renderData();
+  scheduleRenderData();
 
   // 백그라운드에서 API 호출
   try {
     await updateNotionPage(taskId, {
       '완료': { checkbox: completed }
     });
+    completeLoading(`${taskTitle} ${action}`);
     scheduleRefresh();
   } catch (error) {
     console.error('업데이트 실패:', error);
+    completeLoading(`${taskTitle} ${action} 실패`);
     // 실패시 롤백
     task.properties['완료'].checkbox = originalCompleted;
-    renderData();
-    loading.textContent = '';
+    scheduleRenderData();
   }
 };
 
@@ -1103,13 +1164,13 @@ window.updateTime = async function(taskId, field, value, inputElement) {
     inputElement.value = formattedValue;
   }
 
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
-
   // 백업
   const task = currentData.results.find(t => t.id === taskId);
   if (!task) return;
   const originalValue = task.properties[field]?.rich_text?.[0]?.plain_text || '';
+
+  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
+  const fieldName = field === '시작' ? '시작 시간' : '끝 시간';
 
   // UI 즉시 업데이트 (빈 값이든 아니든)
   if (!task.properties[field]) {
@@ -1121,13 +1182,14 @@ window.updateTime = async function(taskId, field, value, inputElement) {
   } else {
     task.properties[field].rich_text = [];
   }
-  renderData();
+  scheduleRenderData();
 
   // 빈 값이면 API 호출만 안 함
   if (!formattedValue.trim()) {
-    loading.textContent = '';
     return;
   }
+
+  startLoading(`${taskTitle} ${fieldName} 수정`);
 
   // 백그라운드에서 API 호출
   try {
@@ -1136,17 +1198,18 @@ window.updateTime = async function(taskId, field, value, inputElement) {
         rich_text: [{ type: 'text', text: { content: formattedValue } }]
       }
     });
+    completeLoading(`${taskTitle} ${fieldName} 수정`);
     scheduleRefresh();
   } catch (error) {
     console.error('시간 업데이트 실패:', error);
+    completeLoading(`${taskTitle} ${fieldName} 수정 실패`);
     // 실패시 롤백
     if (originalValue) {
       task.properties[field].rich_text = [{ type: 'text', text: { content: originalValue }, plain_text: originalValue }];
     } else {
       task.properties[field].rich_text = [];
     }
-    renderData();
-    loading.textContent = '';
+    scheduleRenderData();
   }
 };
 
@@ -1193,9 +1256,9 @@ window.updateDate = async function(taskId, newDate) {
     }
   };
 
-  // UI 즉시 업데이트
+  // UI 업데이트 (debounced)
   currentData.results.unshift(tempTask);
-  renderData();
+  scheduleRenderData();
 
   // 백그라운드에서 API 호출
   try {
@@ -1254,7 +1317,7 @@ window.updateDate = async function(taskId, newDate) {
     console.error('날짜 변경 실패:', error);
     // 실패시 임시 항목 제거
     currentData.results = currentData.results.filter(t => t.id !== tempId);
-    renderData();
+    scheduleRenderData();
     loading.textContent = '';
   }
 };
@@ -1271,12 +1334,13 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
   const originalTime = task.properties?.['목표 시간']?.number;
   if (originalTime === timeValue) return;
 
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
+  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
 
-  // UI 즉시 업데이트
+  // UI 업데이트 (debounced)
   task.properties['목표 시간'].number = timeValue;
-  renderData();
+  scheduleRenderData();
+
+  startLoading(`${taskTitle} 목표 시간 수정`);
 
   // 백그라운드에서 API 호출
   try {
@@ -1284,14 +1348,14 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
       '목표 시간': { number: timeValue }
     });
 
+    completeLoading(`${taskTitle} 목표 시간 수정`);
     scheduleRefresh();
   } catch (error) {
     console.error('목표 시간 업데이트 실패:', error);
+    completeLoading(`${taskTitle} 목표 시간 수정 실패`);
     // 실패시 롤백
     task.properties['목표 시간'].number = originalTime;
-    renderData();
-  } finally {
-    loading.textContent = '';
+    scheduleRenderData();
   }
 };
 
@@ -1403,30 +1467,32 @@ window.updateDateInTask = async function(taskId, newDate) {
 };
 
 window.updateRating = async function(taskId, value) {
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
-
   // 백업
   const task = currentData.results.find(t => t.id === taskId);
   if (!task) return;
   const originalRating = task.properties['(੭•̀ᴗ•̀)੭']?.select?.name || null;
 
-  // UI 즉시 업데이트
+  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
+
+  // UI 업데이트 (debounced)
   task.properties['(੭•̀ᴗ•̀)੭'] = value ? { select: { name: value } } : { select: null };
-  renderData();
+  scheduleRenderData();
+
+  startLoading(`${taskTitle} 집중도 수정`);
 
   // 백그라운드에서 API 호출
   try {
     await updateNotionPage(taskId, {
       '(੭•̀ᴗ•̀)੭': value ? { select: { name: value } } : { select: null }
     });
+    completeLoading(`${taskTitle} 집중도 수정`);
     scheduleRefresh();
   } catch (error) {
     console.error('집중도 업데이트 실패:', error);
+    completeLoading(`${taskTitle} 집중도 수정 실패`);
     // 실패시 롤백
     task.properties['(੭•̀ᴗ•̀)੭'] = originalRating ? { select: { name: originalRating } } : { select: null };
-    renderData();
-    loading.textContent = '';
+    scheduleRenderData();
   }
 };
 
@@ -1745,9 +1811,13 @@ function renderTimelineView() {
     return dateStart && dateStart === targetDateStr;
   });
 
-  // 완료 안 한 일 먼저, 그 다음 완료한 일
-  const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
-  const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
+  // 오늘 날짜 구하기
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = formatDateToLocalString(today);
+
+  // 오늘 또는 미래 날짜인 경우에만 완료/미완료 분리
+  const isPastDate = targetDateStr < todayStr;
 
   const sortTasks = (tasks) => {
     return tasks.sort((a, b) => {
@@ -1771,7 +1841,16 @@ function renderTimelineView() {
     });
   };
 
-  const sortedTasks = [...sortTasks(incompleteTasks), ...sortTasks(completedTasks)];
+  let sortedTasks;
+  if (isPastDate) {
+    // 과거 날짜: 완료/미완료 구분 없이 그냥 정렬
+    sortedTasks = sortTasks(dayTasks);
+  } else {
+    // 오늘/미래: 완료 안 한 일 먼저, 그 다음 완료한 일
+    const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
+    const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
+    sortedTasks = [...sortTasks(incompleteTasks), ...sortTasks(completedTasks)];
+  }
 
   // 완료 개수 계산
   const completedCount = sortedTasks.filter(t => t.properties?.['완료']?.checkbox).length;
@@ -1943,9 +2022,13 @@ function renderTaskView() {
     return dateStart && dateStart === targetDateStr;
   });
 
-  // 완료 안 한 일 먼저
-  const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
-  const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
+  // 오늘 날짜 구하기
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = formatDateToLocalString(today);
+
+  // 오늘 또는 미래 날짜인 경우에만 완료/미완료 분리
+  const isPastDate = targetDateStr < todayStr;
 
   const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th'];
 
@@ -1957,7 +2040,16 @@ function renderTaskView() {
     });
   };
 
-  const allTasks = [...sortByPriority(incompleteTasks), ...sortByPriority(completedTasks)];
+  let allTasks;
+  if (isPastDate) {
+    // 과거 날짜: 완료/미완료 구분 없이 그냥 정렬
+    allTasks = sortByPriority(dayTasks);
+  } else {
+    // 오늘/미래: 완료 안 한 일 먼저
+    const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
+    const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
+    allTasks = [...sortByPriority(incompleteTasks), ...sortByPriority(completedTasks)];
+  }
 
   // 시간 통계 계산
   let totalTarget = 0;
@@ -2596,6 +2688,8 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
   if (item && item.properties?.['날짜']) {
     const oldDate = item.properties['날짜'].date?.start;
 
+    const itemTitle = item.properties?.['범위']?.title?.[0]?.plain_text || '항목';
+
     // 히스토리에 추가
     addToHistory({
       type: 'UPDATE',
@@ -2605,6 +2699,8 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
     });
 
     item.properties['날짜'].date = { start: newDate };
+
+    startLoading(`${itemTitle} 날짜 변경`);
 
     // 노션에 실제로 날짜 업데이트
     try {
@@ -2627,12 +2723,15 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
         throw new Error('날짜 업데이트 실패');
       }
 
-      // 즉시 UI 업데이트
-      renderCalendarView();
+      completeLoading(`${itemTitle} 날짜 변경`);
+
+      // UI 업데이트 (debounced)
+      scheduleRender();
       // 백그라운드에서 데이터 동기화
       scheduleRefresh();
     } catch (error) {
       console.error('Error updating date:', error);
+      completeLoading(`${itemTitle} 날짜 변경 실패`);
     }
   }
 };
