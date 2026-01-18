@@ -49,15 +49,24 @@ function completeLoading(message) {
 
 function updateLoadingIndicator() {
   const loading = document.getElementById('loading');
+  const tooltip = document.getElementById('loading-tooltip');
   if (!loading) return;
+
+  const logText = loadingLogs.length > 0 ? loadingLogs.slice(-10).join('\n') : '작업 로그가 없습니다';
 
   if (loadingCount > 0) {
     loading.textContent = '⏳';
-    loading.title = loadingLogs.slice(-10).join('\n'); // 최근 10개만 툴팁에 표시
   } else {
     loading.textContent = '';
-    loading.title = loadingLogs.slice(-10).join('\n');
   }
+
+  // 커스텀 툴팁 업데이트
+  if (tooltip) {
+    tooltip.textContent = logText;
+  }
+
+  // 기본 title 속성도 유지 (fallback)
+  loading.title = logText;
 }
 
 // 히스토리에 작업 추가
@@ -1532,8 +1541,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 function setupEventListeners() {
   // 로딩 인디케이터 초기화
   const loading = document.getElementById('loading');
+  const tooltip = document.getElementById('loading-tooltip');
   if (loading) {
     loading.title = '작업 로그';
+  }
+  if (tooltip) {
+    tooltip.textContent = '작업 로그가 없습니다';
   }
 
   const viewToggle = document.getElementById('view-toggle');
