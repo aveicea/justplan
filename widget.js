@@ -1819,6 +1819,10 @@ function renderTimelineView() {
   // 오늘 또는 미래 날짜인 경우에만 완료/미완료 분리
   const isPastDate = targetDateStr < todayStr;
 
+  // 완료/미완료 분리 (버튼 표시용)
+  const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
+  const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
+
   const sortTasks = (tasks) => {
     return tasks.sort((a, b) => {
       const aStart = a.properties?.['시작']?.rich_text?.[0]?.plain_text || '';
@@ -1847,8 +1851,6 @@ function renderTimelineView() {
     sortedTasks = sortTasks(dayTasks);
   } else {
     // 오늘/미래: 완료 안 한 일 먼저, 그 다음 완료한 일
-    const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
-    const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
     sortedTasks = [...sortTasks(incompleteTasks), ...sortTasks(completedTasks)];
   }
 
