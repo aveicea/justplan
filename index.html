@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Notion Planner</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      color: #333;
+      background: transparent;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 0;
+      touch-action: manipulation;
+    }
+
+    #widget-container {
+      width: 100%;
+      max-width: 400px;
+      height: 700px;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(20px);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e5e5e7;
+      flex-shrink: 0;
+    }
+
+    .header h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #1d1d1f;
+    }
+
+    .header-buttons {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .loading {
+      font-size: 10px;
+      color: #999;
+      margin-right: 4px;
+    }
+
+    button {
+      background: none;
+      border: none;
+      font-size: 12px;
+      color: #999;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: rgba(153, 153, 153, 0.1);
+    }
+
+    #content {
+      flex: 1;
+      overflow-y: scroll;
+      overflow-x: hidden;
+      margin-right: -20px;
+      padding-right: 20px;
+    }
+
+    #content::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    #content::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #content::-webkit-scrollbar-thumb {
+      background: #ccc;
+      border-radius: 10px;
+    }
+
+    #content::-webkit-scrollbar-thumb:hover {
+      background: #999;
+    }
+
+    .section-title {
+      margin: 0 0 12px 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: #666;
+    }
+
+    .task-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .task-item {
+      padding: 12px;
+      background: #fff;
+      border: 1px solid #e5e5e7;
+      border-radius: 10px;
+      transition: all 0.2s;
+    }
+
+    .task-item.completed {
+      background: #f5f5f7;
+      opacity: 0.6;
+    }
+
+    .task-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .task-content {
+      flex: 1;
+    }
+
+    .task-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #1d1d1f;
+      margin-bottom: 6px;
+    }
+
+    .task-title.completed {
+      text-decoration: line-through;
+    }
+
+    .checkbox {
+      background: #fff;
+      border: 2px solid #999;
+      border-radius: 6px;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      color: #fff;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .checkbox.checked {
+      background: #999;
+      border: none;
+    }
+
+    input[type="text"], input[type="number"], input[type="date"], select {
+      font-family: inherit;
+      font-size: 11px;
+    }
+
+    .footer {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #e5e5e7;
+      font-size: 11px;
+      color: #86868b;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .empty-message {
+      color: #999;
+      font-size: 12px;
+      margin: 20px 0;
+      text-align: center;
+    }
+
+    .calendar-date-group {
+      min-height: 50px;
+      padding: 8px;
+      border-radius: 8px;
+      transition: background 0.2s;
+    }
+
+    .calendar-item {
+      background: #fff;
+      border: 1px solid #e5e5e7;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      transition: all 0.2s;
+    }
+
+    .calendar-item:hover {
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      transform: translateY(-1px);
+    }
+
+    .calendar-item:active {
+      cursor: grabbing;
+    }
+  </style>
+</head>
+<body>
+  <div id="widget-container">
+    <div class="header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <h2 onclick="toggleCalendarView()" style="cursor: pointer; margin: 0;" title="달력 보기">📚 PLANNER</h2>
+        <button id="dday-button" onclick="toggleDDaySelector()" style="font-size: 11px; padding: 2px 6px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer;">D-Day</button>
+      </div>
+      <div class="header-buttons">
+        <span class="loading" id="loading"></span>
+        <button id="view-toggle">TIME TABLE</button>
+      </div>
+    </div>
+
+    <div id="content">
+      <div class="empty-message">데이터 로딩 중...</div>
+    </div>
+
+    <div class="footer">
+      마지막 업데이트: <span id="last-update">--:--</span>
+    </div>
+  </div>
+
+  <script src="widget.js"></script>
+</body>
+</html>
