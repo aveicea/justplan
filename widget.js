@@ -74,8 +74,8 @@ async function undo() {
   if (undoStack.length === 0) return;
 
   const action = undoStack.pop();
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
+
+  startLoading('실행 취소');
 
   try {
     if (action.type === 'UPDATE') {
@@ -119,10 +119,10 @@ async function undo() {
       await fetchCalendarData();
       renderCalendarView();
     }
+    completeLoading('실행 취소');
   } catch (error) {
     console.error('Undo failed:', error);
-  } finally {
-    loading.textContent = '';
+    completeLoading('실행 취소 실패');
   }
 }
 
@@ -131,8 +131,8 @@ async function redo() {
   if (redoStack.length === 0) return;
 
   const action = redoStack.pop();
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
+
+  startLoading('다시 실행');
 
   try {
     if (action.type === 'UPDATE') {
@@ -176,10 +176,10 @@ async function redo() {
       await fetchCalendarData();
       renderCalendarView();
     }
+    completeLoading('다시 실행');
   } catch (error) {
     console.error('Redo failed:', error);
-  } finally {
-    loading.textContent = '';
+    completeLoading('다시 실행 실패');
   }
 }
 
@@ -754,12 +754,12 @@ window.editTask = async function(taskId) {
 window.duplicateTask = async function(taskId) {
   const task = currentData.results.find(t => t.id === taskId);
   if (!task) return;
-  
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
-  
+
+  const originalTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '';
+
+  startLoading(`${originalTitle} 복제`);
+
   try {
-    const originalTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '';
     
     // (숫자) 찾아서 증가
     const numberMatch = originalTitle.match(/\((\d+)\)$/);
@@ -843,9 +843,10 @@ window.duplicateTask = async function(taskId) {
     await fetchAllData();
     // 백그라운드에서 데이터 동기화
     scheduleRefresh();
+    completeLoading(`${originalTitle} 복제`);
   } catch (error) {
     console.error('복제 실패:', error);
-    loading.textContent = '';
+    completeLoading(`${originalTitle} 복제 실패`);
   }
 };
 
@@ -864,11 +865,10 @@ window.confirmEditTask = async function(taskId) {
     return;
   }
 
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
-
   // 바로 창 닫기
   renderData();
+
+  startLoading(`${title} 수정`);
 
   // 백그라운드에서 업데이트
   (async () => {
@@ -911,9 +911,10 @@ window.confirmEditTask = async function(taskId) {
 
       await updateNotionPage(taskId, properties);
       scheduleRefresh();
+      completeLoading(`${title} 수정`);
     } catch (error) {
       console.error('수정 실패:', error);
-      loading.textContent = '';
+      completeLoading(`${title} 수정 실패`);
     }
   })();
 };
@@ -922,8 +923,9 @@ window.deleteTask = async function(taskId) {
   const task = currentData.results.find(t => t.id === taskId);
   if (!task) return;
 
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
+  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
+
+  startLoading(`${taskTitle} 삭제`);
 
   // 히스토리에 추가 (삭제 전 상태 저장)
   addToHistory({
@@ -955,9 +957,10 @@ window.deleteTask = async function(taskId) {
       if (!response.ok) throw new Error('삭제 실패');
 
       scheduleRefresh();
+      completeLoading(`${taskTitle} 삭제`);
     } catch (error) {
       console.error('삭제 실패:', error);
-      loading.textContent = '';
+      completeLoading(`${taskTitle} 삭제 실패`);
     }
   })();
 };
@@ -1013,10 +1016,9 @@ window.confirmAddTask = async function() {
   if (!title) {
     return;
   }
-  
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
-  
+
+  startLoading(`${title} 추가`);
+
   try {
     const todayDate = currentDate.toISOString().split('T')[0];
     
@@ -1079,10 +1081,10 @@ window.confirmAddTask = async function() {
     }
     
     scheduleRefresh();
+    completeLoading(`${title} 추가`);
   } catch (error) {
     console.error('할 일 추가 오류:', error);
-  } finally {
-    loading.textContent = '';
+    completeLoading(`${title} 추가 실패`);
   }
 };
 
