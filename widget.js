@@ -1767,9 +1767,13 @@ function renderTimelineView() {
     return dateStart && dateStart === targetDateStr;
   });
 
-  // 완료 안 한 일 먼저, 그 다음 완료한 일
-  const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
-  const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
+  // 오늘 날짜 구하기
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = formatDateToLocalString(today);
+
+  // 오늘 또는 미래 날짜인 경우에만 완료/미완료 분리
+  const isPastDate = targetDateStr < todayStr;
 
   const sortTasks = (tasks) => {
     return tasks.sort((a, b) => {
@@ -1793,7 +1797,16 @@ function renderTimelineView() {
     });
   };
 
-  const sortedTasks = [...sortTasks(incompleteTasks), ...sortTasks(completedTasks)];
+  let sortedTasks;
+  if (isPastDate) {
+    // 과거 날짜: 완료/미완료 구분 없이 그냥 정렬
+    sortedTasks = sortTasks(dayTasks);
+  } else {
+    // 오늘/미래: 완료 안 한 일 먼저, 그 다음 완료한 일
+    const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
+    const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
+    sortedTasks = [...sortTasks(incompleteTasks), ...sortTasks(completedTasks)];
+  }
 
   // 완료 개수 계산
   const completedCount = sortedTasks.filter(t => t.properties?.['완료']?.checkbox).length;
@@ -1965,9 +1978,13 @@ function renderTaskView() {
     return dateStart && dateStart === targetDateStr;
   });
 
-  // 완료 안 한 일 먼저
-  const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
-  const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
+  // 오늘 날짜 구하기
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = formatDateToLocalString(today);
+
+  // 오늘 또는 미래 날짜인 경우에만 완료/미완료 분리
+  const isPastDate = targetDateStr < todayStr;
 
   const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th'];
 
@@ -1979,7 +1996,16 @@ function renderTaskView() {
     });
   };
 
-  const allTasks = [...sortByPriority(incompleteTasks), ...sortByPriority(completedTasks)];
+  let allTasks;
+  if (isPastDate) {
+    // 과거 날짜: 완료/미완료 구분 없이 그냥 정렬
+    allTasks = sortByPriority(dayTasks);
+  } else {
+    // 오늘/미래: 완료 안 한 일 먼저
+    const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
+    const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
+    allTasks = [...sortByPriority(incompleteTasks), ...sortByPriority(completedTasks)];
+  }
 
   // 시간 통계 계산
   let totalTarget = 0;
