@@ -18,6 +18,8 @@ let lastSyncedItems = []; // 마지막 동기화로 생성된 항목 ID들
 let dDayDate = localStorage.getItem('dDayDate') || null; // D-Day 날짜
 let dDayTitle = localStorage.getItem('dDayTitle') || null; // D-Day 제목
 let refreshTimer = null; // 디바운스용 타이머
+let renderTimer = null; // 렌더링 디바운스용 타이머
+let renderDataTimer = null; // 플래너 렌더링 디바운스용 타이머
 let undoStack = []; // 실행 취소 스택
 let redoStack = []; // 다시 실행 스택
 const MAX_HISTORY = 50; // 최대 히스토리 개수
@@ -154,6 +156,26 @@ function scheduleRefresh() {
     fetchAllData();
     refreshTimer = null;
   }, 2000); // 2초 후 새로고침
+}
+
+function scheduleRender() {
+  if (renderTimer) {
+    clearTimeout(renderTimer);
+  }
+  renderTimer = setTimeout(() => {
+    renderCalendarView();
+    renderTimer = null;
+  }, 500); // 0.5초 후 렌더링
+}
+
+function scheduleRenderData() {
+  if (renderDataTimer) {
+    clearTimeout(renderDataTimer);
+  }
+  renderDataTimer = setTimeout(() => {
+    renderData();
+    renderDataTimer = null;
+  }, 300); // 0.3초 후 렌더링
 }
 
 // 전역 함수 등록
@@ -2627,8 +2649,8 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
         throw new Error('날짜 업데이트 실패');
       }
 
-      // 즉시 UI 업데이트
-      renderCalendarView();
+      // UI 업데이트 (debounced)
+      scheduleRender();
       // 백그라운드에서 데이터 동기화
       scheduleRefresh();
     } catch (error) {
