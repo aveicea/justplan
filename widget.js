@@ -1071,9 +1071,9 @@ window.toggleComplete = async function(taskId, completed) {
     after: { '완료': { checkbox: completed } }
   });
 
-  // UI 즉시 업데이트
+  // UI 업데이트 (debounced)
   task.properties['완료'].checkbox = completed;
-  renderData();
+  scheduleRenderData();
 
   // 백그라운드에서 API 호출
   try {
@@ -1085,7 +1085,7 @@ window.toggleComplete = async function(taskId, completed) {
     console.error('업데이트 실패:', error);
     // 실패시 롤백
     task.properties['완료'].checkbox = originalCompleted;
-    renderData();
+    scheduleRenderData();
     loading.textContent = '';
   }
 };
@@ -1143,7 +1143,7 @@ window.updateTime = async function(taskId, field, value, inputElement) {
   } else {
     task.properties[field].rich_text = [];
   }
-  renderData();
+  scheduleRenderData();
 
   // 빈 값이면 API 호출만 안 함
   if (!formattedValue.trim()) {
@@ -1167,7 +1167,7 @@ window.updateTime = async function(taskId, field, value, inputElement) {
     } else {
       task.properties[field].rich_text = [];
     }
-    renderData();
+    scheduleRenderData();
     loading.textContent = '';
   }
 };
@@ -1215,9 +1215,9 @@ window.updateDate = async function(taskId, newDate) {
     }
   };
 
-  // UI 즉시 업데이트
+  // UI 업데이트 (debounced)
   currentData.results.unshift(tempTask);
-  renderData();
+  scheduleRenderData();
 
   // 백그라운드에서 API 호출
   try {
@@ -1276,7 +1276,7 @@ window.updateDate = async function(taskId, newDate) {
     console.error('날짜 변경 실패:', error);
     // 실패시 임시 항목 제거
     currentData.results = currentData.results.filter(t => t.id !== tempId);
-    renderData();
+    scheduleRenderData();
     loading.textContent = '';
   }
 };
@@ -1296,9 +1296,9 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
   const loading = document.getElementById('loading');
   loading.textContent = '⏳';
 
-  // UI 즉시 업데이트
+  // UI 업데이트 (debounced)
   task.properties['목표 시간'].number = timeValue;
-  renderData();
+  scheduleRenderData();
 
   // 백그라운드에서 API 호출
   try {
@@ -1311,7 +1311,7 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
     console.error('목표 시간 업데이트 실패:', error);
     // 실패시 롤백
     task.properties['목표 시간'].number = originalTime;
-    renderData();
+    scheduleRenderData();
   } finally {
     loading.textContent = '';
   }
@@ -1433,9 +1433,9 @@ window.updateRating = async function(taskId, value) {
   if (!task) return;
   const originalRating = task.properties['(੭•̀ᴗ•̀)੭']?.select?.name || null;
 
-  // UI 즉시 업데이트
+  // UI 업데이트 (debounced)
   task.properties['(੭•̀ᴗ•̀)੭'] = value ? { select: { name: value } } : { select: null };
-  renderData();
+  scheduleRenderData();
 
   // 백그라운드에서 API 호출
   try {
@@ -1447,7 +1447,7 @@ window.updateRating = async function(taskId, value) {
     console.error('집중도 업데이트 실패:', error);
     // 실패시 롤백
     task.properties['(੭•̀ᴗ•̀)੭'] = originalRating ? { select: { name: originalRating } } : { select: null };
-    renderData();
+    scheduleRenderData();
     loading.textContent = '';
   }
 };
