@@ -2639,27 +2639,30 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
 
 window.loadPrevCalendar = function() {
   const content = document.getElementById('content');
-  const scrollPos = content.scrollTop;
+  const oldScrollHeight = content.scrollHeight;
+  const oldScrollTop = content.scrollTop;
 
   calendarStartDate.setDate(calendarStartDate.getDate() - 14);
   renderCalendarView();
 
-  // 스크롤 위치 복원
+  // 새로 추가된 콘텐츠 높이만큼 스크롤 조정
   requestAnimationFrame(() => {
-    content.scrollTop = scrollPos;
+    const newScrollHeight = content.scrollHeight;
+    const heightDiff = newScrollHeight - oldScrollHeight;
+    content.scrollTop = oldScrollTop + heightDiff;
   });
 };
 
 window.loadNextCalendar = function() {
   const content = document.getElementById('content');
-  const scrollPos = content.scrollTop;
+  const oldScrollTop = content.scrollTop;
 
   calendarEndDate.setDate(calendarEndDate.getDate() + 14);
   renderCalendarView();
 
-  // 스크롤 위치 복원
+  // 스크롤 위치 유지
   requestAnimationFrame(() => {
-    content.scrollTop = scrollPos;
+    content.scrollTop = oldScrollTop;
   });
 };
 
