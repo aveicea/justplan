@@ -3085,8 +3085,8 @@ function renderCalendarView() {
 
         html += `
           <div class="calendar-item" data-id="${item.id}" data-date="${dateStr}" style="position: relative; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div class="drag-handle" style="position: absolute; left: 0; top: 0; bottom: 0; width: 24px; cursor: grab; background: transparent; border-right: 2px solid #e5e5e7; user-select: none; -webkit-user-select: none; touch-action: none; display: flex; align-items: center; justify-content: center; color: #ccc; font-size: 16px;">⋮⋮</div>
-            <div style="font-size: 12px; color: #333; flex: 1; cursor: pointer; margin-left: 32px;" onclick="editTask('${item.id}')">${displayTitle}</div>
+            <div class="drag-handle" style="position: absolute; left: 0; top: 0; bottom: 0; width: 80px; cursor: grab; opacity: 0; user-select: none; -webkit-user-select: none; touch-action: none;"></div>
+            <div style="font-size: 12px; color: #333; flex: 1; cursor: pointer;" onclick="editTask('${item.id}')">${displayTitle}</div>
             <div class="checkbox ${completed ? 'checked' : ''}" style="pointer-events: none; margin-left: 8px;">
               ${completed ? '✓' : ''}
             </div>
