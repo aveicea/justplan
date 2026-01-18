@@ -2638,13 +2638,29 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
 };
 
 window.loadPrevCalendar = function() {
+  const content = document.getElementById('content');
+  const scrollPos = content.scrollTop;
+
   calendarStartDate.setDate(calendarStartDate.getDate() - 14);
   renderCalendarView();
+
+  // 스크롤 위치 복원
+  requestAnimationFrame(() => {
+    content.scrollTop = scrollPos;
+  });
 };
 
 window.loadNextCalendar = function() {
+  const content = document.getElementById('content');
+  const scrollPos = content.scrollTop;
+
   calendarEndDate.setDate(calendarEndDate.getDate() + 14);
   renderCalendarView();
+
+  // 스크롤 위치 복원
+  requestAnimationFrame(() => {
+    content.scrollTop = scrollPos;
+  });
 };
 
 window.saveToPlanner = async function(dateStr) {
