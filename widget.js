@@ -2504,7 +2504,7 @@ async function fetchCalendarData(silent = false) {
   }
 
   try {
-    const notionUrl = `https://api.notion.com/v1/databases/${CALENDAR_DB_ID}/query`;
+    const notionUrl = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
     const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
       headers: {
@@ -3036,13 +3036,7 @@ function renderCalendarView() {
   const todayDate = new Date();
   const today = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;
 
-  let html = `
-    <div style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 12px; gap: 4px;">
-      <button onclick="syncPlannerToCalendar()" style="font-size: 14px; padding: 2px; background: none; border: none; cursor: pointer;" title="플래너 동기화">🔄</button>
-      <button onclick="saveAllToPlanner()" style="font-size: 14px; padding: 2px; background: none; border: none; cursor: pointer;" title="프리플랜 → 플래너">💾</button>
-    </div>
-    <button onclick="loadPrevCalendar()" style="width: 100%; background: #e5e5e7; color: #333; border: none; border-radius: 4px; padding: 8px; font-size: 11px; cursor: pointer; margin-bottom: 12px;">더보기</button>
-  `;
+  let html = ``;
 
   allDates.forEach(dateStr => {
     const items = groupedByDate[dateStr] || [];
@@ -3054,7 +3048,6 @@ function renderCalendarView() {
       <div style="margin-bottom: 20px;">
         <div style="display: flex; align-items: center; margin-bottom: 8px;">
           <h4 style="${dateStyle} cursor: pointer;" onclick="toggleCalendarView('${dateStr}')" title="플래너로 이동">${dateLabel}</h4>
-          ${items.length > 0 ? `<button onclick="saveToPlanner('${dateStr}')" style="font-size: 14px; padding: 2px; background: none; border: none; cursor: pointer; margin-left: 4px;" title="플래너에 저장">→</button>` : ''}
         </div>
         <div class="calendar-date-group" data-date="${dateStr}">
     `;
@@ -3085,19 +3078,8 @@ function renderCalendarView() {
         const bookName = bookRelation && bookNames[bookRelation.id] ? bookNames[bookRelation.id] : '';
         const displayTitle = bookName ? `[${bookName}] ${title}` : title;
 
-        // 롤업에서 플래너의 완료 상태 가져오기 (여러 가능한 속성 이름 시도)
-        let completed = false;
-        const rollupProp = item.properties?.['완료']?.rollup;
-        if (rollupProp) {
-          // 배열 타입 롤업
-          if (rollupProp.array && rollupProp.array.length > 0) {
-            completed = rollupProp.array[0]?.checkbox || false;
-          }
-          // 숫자 타입 롤업 (1이면 완료)
-          else if (rollupProp.number !== undefined) {
-            completed = rollupProp.number > 0;
-          }
-        }
+        // 플래너 데이터베이스의 완료 상태 직접 가져오기
+        const completed = item.properties?.['완료']?.checkbox || false;
 
         html += `
           <div class="calendar-item" data-id="${item.id}" data-date="${dateStr}" style="position: relative; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
@@ -3116,10 +3098,6 @@ function renderCalendarView() {
       </div>
     `;
   });
-
-  html += `
-    <button onclick="loadNextCalendar()" style="width: 100%; background: #e5e5e7; color: #333; border: none; border-radius: 4px; padding: 8px; font-size: 11px; cursor: pointer; margin-top: 4px;">더보기</button>
-  `;
 
   content.innerHTML = html;
   initCalendarDragDrop();
