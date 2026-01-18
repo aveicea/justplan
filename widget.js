@@ -23,6 +23,42 @@ let renderDataTimer = null; // 플래너 렌더링 디바운스용 타이머
 let undoStack = []; // 실행 취소 스택
 let redoStack = []; // 다시 실행 스택
 const MAX_HISTORY = 50; // 최대 히스토리 개수
+let loadingLogs = []; // 로딩 로그
+let loadingCount = 0; // 진행중인 작업 수
+
+// 로딩 로그 관리
+function startLoading(message) {
+  loadingCount++;
+  const timestamp = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+  loadingLogs.push(`[${timestamp}] ${message}...`);
+  updateLoadingIndicator();
+}
+
+function completeLoading(message) {
+  loadingCount = Math.max(0, loadingCount - 1);
+  const timestamp = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+  loadingLogs.push(`[${timestamp}] ✓ ${message}`);
+
+  // 최대 20개까지만 유지
+  if (loadingLogs.length > 20) {
+    loadingLogs = loadingLogs.slice(-20);
+  }
+
+  updateLoadingIndicator();
+}
+
+function updateLoadingIndicator() {
+  const loading = document.getElementById('loading');
+  if (!loading) return;
+
+  if (loadingCount > 0) {
+    loading.textContent = '⏳';
+    loading.title = loadingLogs.slice(-10).join('\n'); // 최근 10개만 툴팁에 표시
+  } else {
+    loading.textContent = '';
+    loading.title = loadingLogs.slice(-10).join('\n');
+  }
+}
 
 // 히스토리에 작업 추가
 function addToHistory(action) {
@@ -1055,13 +1091,15 @@ window.cancelAddTask = function() {
 };
 
 window.toggleComplete = async function(taskId, completed) {
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
-
   // 백업
   const task = currentData.results.find(t => t.id === taskId);
   if (!task) return;
   const originalCompleted = task.properties['완료'].checkbox;
+
+  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
+  const action = completed ? '완료 처리' : '미완료 처리';
+
+  startLoading(`${taskTitle} ${action}`);
 
   // 히스토리에 추가
   addToHistory({
@@ -1080,13 +1118,14 @@ window.toggleComplete = async function(taskId, completed) {
     await updateNotionPage(taskId, {
       '완료': { checkbox: completed }
     });
+    completeLoading(`${taskTitle} ${action}`);
     scheduleRefresh();
   } catch (error) {
     console.error('업데이트 실패:', error);
+    completeLoading(`${taskTitle} ${action} 실패`);
     // 실패시 롤백
     task.properties['완료'].checkbox = originalCompleted;
     scheduleRenderData();
-    loading.textContent = '';
   }
 };
 
@@ -1125,13 +1164,13 @@ window.updateTime = async function(taskId, field, value, inputElement) {
     inputElement.value = formattedValue;
   }
 
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
-
   // 백업
   const task = currentData.results.find(t => t.id === taskId);
   if (!task) return;
   const originalValue = task.properties[field]?.rich_text?.[0]?.plain_text || '';
+
+  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
+  const fieldName = field === '시작' ? '시작 시간' : '끝 시간';
 
   // UI 즉시 업데이트 (빈 값이든 아니든)
   if (!task.properties[field]) {
@@ -1147,9 +1186,10 @@ window.updateTime = async function(taskId, field, value, inputElement) {
 
   // 빈 값이면 API 호출만 안 함
   if (!formattedValue.trim()) {
-    loading.textContent = '';
     return;
   }
+
+  startLoading(`${taskTitle} ${fieldName} 수정`);
 
   // 백그라운드에서 API 호출
   try {
@@ -1158,9 +1198,11 @@ window.updateTime = async function(taskId, field, value, inputElement) {
         rich_text: [{ type: 'text', text: { content: formattedValue } }]
       }
     });
+    completeLoading(`${taskTitle} ${fieldName} 수정`);
     scheduleRefresh();
   } catch (error) {
     console.error('시간 업데이트 실패:', error);
+    completeLoading(`${taskTitle} ${fieldName} 수정 실패`);
     // 실패시 롤백
     if (originalValue) {
       task.properties[field].rich_text = [{ type: 'text', text: { content: originalValue }, plain_text: originalValue }];
@@ -1168,7 +1210,6 @@ window.updateTime = async function(taskId, field, value, inputElement) {
       task.properties[field].rich_text = [];
     }
     scheduleRenderData();
-    loading.textContent = '';
   }
 };
 
@@ -1293,12 +1334,13 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
   const originalTime = task.properties?.['목표 시간']?.number;
   if (originalTime === timeValue) return;
 
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
+  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
 
   // UI 업데이트 (debounced)
   task.properties['목표 시간'].number = timeValue;
   scheduleRenderData();
+
+  startLoading(`${taskTitle} 목표 시간 수정`);
 
   // 백그라운드에서 API 호출
   try {
@@ -1306,14 +1348,14 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
       '목표 시간': { number: timeValue }
     });
 
+    completeLoading(`${taskTitle} 목표 시간 수정`);
     scheduleRefresh();
   } catch (error) {
     console.error('목표 시간 업데이트 실패:', error);
+    completeLoading(`${taskTitle} 목표 시간 수정 실패`);
     // 실패시 롤백
     task.properties['목표 시간'].number = originalTime;
     scheduleRenderData();
-  } finally {
-    loading.textContent = '';
   }
 };
 
@@ -1425,30 +1467,32 @@ window.updateDateInTask = async function(taskId, newDate) {
 };
 
 window.updateRating = async function(taskId, value) {
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
-
   // 백업
   const task = currentData.results.find(t => t.id === taskId);
   if (!task) return;
   const originalRating = task.properties['(੭•̀ᴗ•̀)੭']?.select?.name || null;
 
+  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
+
   // UI 업데이트 (debounced)
   task.properties['(੭•̀ᴗ•̀)੭'] = value ? { select: { name: value } } : { select: null };
   scheduleRenderData();
+
+  startLoading(`${taskTitle} 집중도 수정`);
 
   // 백그라운드에서 API 호출
   try {
     await updateNotionPage(taskId, {
       '(੭•̀ᴗ•̀)੭': value ? { select: { name: value } } : { select: null }
     });
+    completeLoading(`${taskTitle} 집중도 수정`);
     scheduleRefresh();
   } catch (error) {
     console.error('집중도 업데이트 실패:', error);
+    completeLoading(`${taskTitle} 집중도 수정 실패`);
     // 실패시 롤백
     task.properties['(੭•̀ᴗ•̀)੭'] = originalRating ? { select: { name: originalRating } } : { select: null };
     scheduleRenderData();
-    loading.textContent = '';
   }
 };
 
@@ -2644,6 +2688,8 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
   if (item && item.properties?.['날짜']) {
     const oldDate = item.properties['날짜'].date?.start;
 
+    const itemTitle = item.properties?.['범위']?.title?.[0]?.plain_text || '항목';
+
     // 히스토리에 추가
     addToHistory({
       type: 'UPDATE',
@@ -2653,6 +2699,8 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
     });
 
     item.properties['날짜'].date = { start: newDate };
+
+    startLoading(`${itemTitle} 날짜 변경`);
 
     // 노션에 실제로 날짜 업데이트
     try {
@@ -2675,12 +2723,15 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
         throw new Error('날짜 업데이트 실패');
       }
 
+      completeLoading(`${itemTitle} 날짜 변경`);
+
       // UI 업데이트 (debounced)
       scheduleRender();
       // 백그라운드에서 데이터 동기화
       scheduleRefresh();
     } catch (error) {
       console.error('Error updating date:', error);
+      completeLoading(`${itemTitle} 날짜 변경 실패`);
     }
   }
 };
