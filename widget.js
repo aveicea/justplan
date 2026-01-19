@@ -912,59 +912,56 @@ window.confirmEditTask = async function(taskId) {
 
   startLoading(`${title} 수정`);
 
-  // 백그라운드에서 업데이트
-  (async () => {
-    try {
-      const properties = {
-        '범위': {
-          title: [{ text: { content: title } }]
-        }
-      };
-
-      if (bookSelect.value) {
-        properties['책'] = { relation: [{ id: bookSelect.value }] };
-      } else {
-        properties['책'] = { relation: [] };
+  try {
+    const properties = {
+      '범위': {
+        title: [{ text: { content: title } }]
       }
+    };
 
-      if (timeInput.value) {
-        properties['목표 시간'] = { number: parseInt(timeInput.value) };
-      }
-
-      if (dateInput.value) {
-        properties['날짜'] = { date: { start: dateInput.value } };
-      }
-
-      // 시작 시간 (빈 값도 업데이트)
-      if (startInput.value) {
-        const formattedStart = formatTimeInput(startInput.value);
-        properties['시작'] = { rich_text: [{ type: 'text', text: { content: formattedStart } }] };
-      } else {
-        properties['시작'] = { rich_text: [] };
-      }
-
-      // 끝 시간 (빈 값도 업데이트)
-      if (endInput.value) {
-        const formattedEnd = formatTimeInput(endInput.value);
-        properties['끝'] = { rich_text: [{ type: 'text', text: { content: formattedEnd } }] };
-      } else {
-        properties['끝'] = { rich_text: [] };
-      }
-
-      if (ratingSelect.value) {
-        properties['(੭•̀ᴗ•̀)੭'] = { select: { name: ratingSelect.value } };
-      } else {
-        properties['(੭•̀ᴗ•̀)੭'] = { select: null };
-      }
-
-      await updateNotionPage(taskId, properties);
-      await fetchAllData();
-      completeLoading(`${title} 수정`);
-    } catch (error) {
-      console.error('수정 실패:', error);
-      completeLoading(`${title} 수정 실패`);
+    if (bookSelect.value) {
+      properties['책'] = { relation: [{ id: bookSelect.value }] };
+    } else {
+      properties['책'] = { relation: [] };
     }
-  })();
+
+    if (timeInput.value) {
+      properties['목표 시간'] = { number: parseInt(timeInput.value) };
+    }
+
+    if (dateInput.value) {
+      properties['날짜'] = { date: { start: dateInput.value } };
+    }
+
+    // 시작 시간 (빈 값도 업데이트)
+    if (startInput.value) {
+      const formattedStart = formatTimeInput(startInput.value);
+      properties['시작'] = { rich_text: [{ type: 'text', text: { content: formattedStart } }] };
+    } else {
+      properties['시작'] = { rich_text: [] };
+    }
+
+    // 끝 시간 (빈 값도 업데이트)
+    if (endInput.value) {
+      const formattedEnd = formatTimeInput(endInput.value);
+      properties['끝'] = { rich_text: [{ type: 'text', text: { content: formattedEnd } }] };
+    } else {
+      properties['끝'] = { rich_text: [] };
+    }
+
+    if (ratingSelect.value) {
+      properties['(੭•̀ᴗ•̀)੭'] = { select: { name: ratingSelect.value } };
+    } else {
+      properties['(੭•̀ᴗ•̀)੭'] = { select: null };
+    }
+
+    await updateNotionPage(taskId, properties);
+    await fetchAllData();
+    completeLoading(`${title} 수정`);
+  } catch (error) {
+    console.error('수정 실패:', error);
+    completeLoading(`${title} 수정 실패`);
+  }
 };
 
 window.deleteTask = async function(taskId) {
