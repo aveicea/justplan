@@ -1119,9 +1119,8 @@ window.toggleComplete = async function(taskId, completed) {
     after: { '완료': { checkbox: completed } }
   });
 
-  // UI 업데이트 (debounced)
+  // UI 업데이트
   task.properties['완료'].checkbox = completed;
-  scheduleRenderData();
 
   // 백그라운드에서 API 호출
   try {
@@ -1129,7 +1128,7 @@ window.toggleComplete = async function(taskId, completed) {
       '완료': { checkbox: completed }
     });
     completeLoading(`${taskTitle} ${action}`);
-    scheduleRefresh();
+    scheduleRenderData();
   } catch (error) {
     console.error('업데이트 실패:', error);
     completeLoading(`${taskTitle} ${action} 실패`);
@@ -1192,24 +1191,27 @@ window.updateTime = async function(taskId, field, value, inputElement) {
   } else {
     task.properties[field].rich_text = [];
   }
-  scheduleRenderData();
-
-  // 빈 값이면 API 호출만 안 함
-  if (!formattedValue.trim()) {
-    return;
-  }
 
   startLoading(`${taskTitle} ${fieldName} 수정`);
 
-  // 백그라운드에서 API 호출
+  // 백그라운드에서 API 호출 (빈 값이어도 서버에 업데이트)
   try {
-    await updateNotionPage(taskId, {
-      [field]: {
-        rich_text: [{ type: 'text', text: { content: formattedValue } }]
-      }
-    });
+    if (formattedValue.trim()) {
+      await updateNotionPage(taskId, {
+        [field]: {
+          rich_text: [{ type: 'text', text: { content: formattedValue } }]
+        }
+      });
+    } else {
+      // 빈 값으로 업데이트 (서버에서도 지움)
+      await updateNotionPage(taskId, {
+        [field]: {
+          rich_text: []
+        }
+      });
+    }
     completeLoading(`${taskTitle} ${fieldName} 수정`);
-    scheduleRefresh();
+    scheduleRenderData();
   } catch (error) {
     console.error('시간 업데이트 실패:', error);
     completeLoading(`${taskTitle} ${fieldName} 수정 실패`);
@@ -1346,9 +1348,8 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
 
   const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
 
-  // UI 업데이트 (debounced)
+  // UI 업데이트
   task.properties['목표 시간'].number = timeValue;
-  scheduleRenderData();
 
   startLoading(`${taskTitle} 목표 시간 수정`);
 
@@ -1359,7 +1360,7 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
     });
 
     completeLoading(`${taskTitle} 목표 시간 수정`);
-    scheduleRefresh();
+    scheduleRenderData();
   } catch (error) {
     console.error('목표 시간 업데이트 실패:', error);
     completeLoading(`${taskTitle} 목표 시간 수정 실패`);
@@ -1484,9 +1485,8 @@ window.updateRating = async function(taskId, value) {
 
   const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
 
-  // UI 업데이트 (debounced)
+  // UI 업데이트
   task.properties['(੭•̀ᴗ•̀)੭'] = value ? { select: { name: value } } : { select: null };
-  scheduleRenderData();
 
   startLoading(`${taskTitle} 집중도 수정`);
 
@@ -1496,7 +1496,7 @@ window.updateRating = async function(taskId, value) {
       '(੭•̀ᴗ•̀)੭': value ? { select: { name: value } } : { select: null }
     });
     completeLoading(`${taskTitle} 집중도 수정`);
-    scheduleRefresh();
+    scheduleRenderData();
   } catch (error) {
     console.error('집중도 업데이트 실패:', error);
     completeLoading(`${taskTitle} 집중도 수정 실패`);
