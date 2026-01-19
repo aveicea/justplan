@@ -849,8 +849,6 @@ window.duplicateTask = async function(taskId) {
 
     // 즉시 UI 업데이트
     await fetchAllData();
-    // 백그라운드에서 데이터 동기화
-    scheduleRefresh();
     completeLoading(`${originalTitle} 복제`);
   } catch (error) {
     console.error('복제 실패:', error);
@@ -901,14 +899,20 @@ window.confirmEditTask = async function(taskId) {
         properties['날짜'] = { date: { start: dateInput.value } };
       }
 
+      // 시작 시간 (빈 값도 업데이트)
       if (startInput.value) {
         const formattedStart = formatTimeInput(startInput.value);
         properties['시작'] = { rich_text: [{ type: 'text', text: { content: formattedStart } }] };
+      } else {
+        properties['시작'] = { rich_text: [] };
       }
 
+      // 끝 시간 (빈 값도 업데이트)
       if (endInput.value) {
         const formattedEnd = formatTimeInput(endInput.value);
         properties['끝'] = { rich_text: [{ type: 'text', text: { content: formattedEnd } }] };
+      } else {
+        properties['끝'] = { rich_text: [] };
       }
 
       if (ratingSelect.value) {
@@ -918,7 +922,7 @@ window.confirmEditTask = async function(taskId) {
       }
 
       await updateNotionPage(taskId, properties);
-      scheduleRefresh();
+      await fetchAllData();
       completeLoading(`${title} 수정`);
     } catch (error) {
       console.error('수정 실패:', error);
@@ -964,7 +968,7 @@ window.deleteTask = async function(taskId) {
 
       if (!response.ok) throw new Error('삭제 실패');
 
-      scheduleRefresh();
+      await fetchAllData();
       completeLoading(`${taskTitle} 삭제`);
     } catch (error) {
       console.error('삭제 실패:', error);
@@ -1087,8 +1091,8 @@ window.confirmAddTask = async function() {
     if (!response.ok) {
       throw new Error(result.message || '추가 실패');
     }
-    
-    scheduleRefresh();
+
+    await fetchAllData();
     completeLoading(`${title} 추가`);
   } catch (error) {
     console.error('할 일 추가 오류:', error);
@@ -1268,9 +1272,9 @@ window.updateDate = async function(taskId, newDate) {
     }
   };
 
-  // UI 업데이트 (debounced)
+  // UI 즉시 업데이트
   currentData.results.unshift(tempTask);
-  scheduleRenderData();
+  renderData();
 
   // 백그라운드에서 API 호출
   try {
@@ -1324,12 +1328,12 @@ window.updateDate = async function(taskId, newDate) {
 
     if (!response.ok) throw new Error('복제 실패');
 
-    scheduleRefresh();
+    await fetchAllData();
   } catch (error) {
     console.error('날짜 변경 실패:', error);
     // 실패시 임시 항목 제거
     currentData.results = currentData.results.filter(t => t.id !== tempId);
-    scheduleRenderData();
+    renderData();
     loading.textContent = '';
   }
 };
@@ -1467,7 +1471,7 @@ window.updateDateInTask = async function(taskId, newDate) {
 
     if (!response.ok) throw new Error('복제 실패');
 
-    scheduleRefresh();
+    await fetchAllData();
   } catch (error) {
     console.error('날짜 변경 실패:', error);
     // 실패시 임시 항목 제거
@@ -2608,8 +2612,6 @@ window.duplicateAllIncompleteTasks = async function() {
 
     // 즉시 UI 업데이트
     await fetchAllData();
-    // 백그라운드에서 데이터 동기화
-    scheduleRefresh();
   } catch (error) {
     console.error('전체 복제 실패:', error);
     loading.textContent = '';
@@ -2752,10 +2754,8 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
 
       completeLoading(`${itemTitle} 날짜 변경`);
 
-      // UI 업데이트 (debounced)
+      // UI 업데이트
       scheduleRender();
-      // 백그라운드에서 데이터 동기화
-      scheduleRefresh();
     } catch (error) {
       console.error('Error updating date:', error);
       completeLoading(`${itemTitle} 날짜 변경 실패`);
