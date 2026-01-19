@@ -2755,7 +2755,10 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
       completeLoading(`${itemTitle} 날짜 변경`);
 
       // UI 업데이트
-      scheduleRender();
+      await fetchAllData();
+      if (calendarViewMode) {
+        renderCalendarView();
+      }
     } catch (error) {
       console.error('Error updating date:', error);
       completeLoading(`${itemTitle} 날짜 변경 실패`);
