@@ -922,7 +922,7 @@ window.confirmEditTask = async function(taskId) {
       }
 
       await updateNotionPage(taskId, properties);
-      await fetchAllData();
+      // fetchAllData 하지 않음 - UI는 이미 업데이트됨
       completeLoading(`${title} 수정`);
     } catch (error) {
       console.error('수정 실패:', error);
@@ -1132,7 +1132,7 @@ window.toggleComplete = async function(taskId, completed) {
       '완료': { checkbox: completed }
     });
     completeLoading(`${taskTitle} ${action}`);
-    await fetchAllData();
+    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
   } catch (error) {
     console.error('업데이트 실패:', error);
     completeLoading(`${taskTitle} ${action} 실패`);
@@ -1215,7 +1215,7 @@ window.updateTime = async function(taskId, field, value, inputElement) {
       });
     }
     completeLoading(`${taskTitle} ${fieldName} 수정`);
-    await fetchAllData();
+    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
   } catch (error) {
     console.error('시간 업데이트 실패:', error);
     completeLoading(`${taskTitle} ${fieldName} 수정 실패`);
@@ -1364,7 +1364,7 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
     });
 
     completeLoading(`${taskTitle} 목표 시간 수정`);
-    await fetchAllData();
+    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
   } catch (error) {
     console.error('목표 시간 업데이트 실패:', error);
     completeLoading(`${taskTitle} 목표 시간 수정 실패`);
@@ -1500,7 +1500,7 @@ window.updateRating = async function(taskId, value) {
       '(੭•̀ᴗ•̀)੭': value ? { select: { name: value } } : { select: null }
     });
     completeLoading(`${taskTitle} 집중도 수정`);
-    await fetchAllData();
+    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
   } catch (error) {
     console.error('집중도 업데이트 실패:', error);
     completeLoading(`${taskTitle} 집중도 수정 실패`);
@@ -2342,7 +2342,7 @@ async function updateTaskOrder() {
   await Promise.all(updates);
 
   // 즉시 UI 업데이트 (호출하는 곳에서 scheduleRefresh를 호출하므로 여기서는 렌더링만)
-  await fetchAllData();
+  // fetchAllData 하지 않음 - UI는 이미 업데이트됨
 }
 
 async function updateNotionPage(pageId, properties) {
@@ -2755,7 +2755,7 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
       completeLoading(`${itemTitle} 날짜 변경`);
 
       // UI 업데이트
-      await fetchAllData();
+      // fetchAllData 하지 않음 - UI는 이미 업데이트됨
       if (calendarViewMode) {
         renderCalendarView();
       }
