@@ -1078,76 +1078,37 @@ window.cancelEdit = function() {
 };
 
 window.addNewTask = async function() {
-  const bookList = Object.entries(bookNames).map(([id, name]) =>
+  const bookList = Object.entries(bookNames).map(([id, name]) => 
     `<option value="${id}">${name}</option>`
   ).join('');
-
+  
   const content = document.getElementById('content');
-
+  
   content.innerHTML = `
     <div style="padding: 20px;">
       <h3 style="margin-bottom: 12px;">새 할 일 추가</h3>
-
+      
       <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">범위</label>
-      <input type="text" id="new-task-title" placeholder="할 일 제목"
+      <input type="text" id="new-task-title" placeholder="할 일 제목" 
         style="width: 100%; padding: 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 13px; margin-bottom: 12px;">
-
+      
       <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">책</label>
       <select id="new-task-book" style="width: 100%; padding: 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 13px; margin-bottom: 12px;">
         <option value="">선택 안 함</option>
         ${bookList}
       </select>
-
+      
       <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">목표 시간 (분)</label>
-      <input type="number" id="new-task-time" placeholder="60"
+      <input type="number" id="new-task-time" placeholder="60" 
         style="width: 100%; padding: 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 13px; margin-bottom: 12px;">
-
+      
       <div style="display: flex; gap: 8px;">
         <button onclick="confirmAddTask()" style="flex: 1; padding: 8px; background: #007AFF; color: white; border: none; border-radius: 4px; cursor: pointer;">추가</button>
         <button onclick="cancelAddTask()" style="flex: 1; padding: 8px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer;">취소</button>
       </div>
     </div>
   `;
-
-  setTimeout(() => {
-    document.getElementById('new-task-title').focus();
-  }, 100);
-};
-
-window.addNewTaskForDate = async function(dateStr) {
-  const bookList = Object.entries(bookNames).map(([id, name]) =>
-    `<option value="${id}">${name}</option>`
-  ).join('');
-
-  const content = document.getElementById('content');
-
-  content.innerHTML = `
-    <div style="padding: 20px;">
-      <h3 style="margin-bottom: 12px;">새 할 일 추가 (${formatDateLabelShort(dateStr)})</h3>
-
-      <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">범위</label>
-      <input type="text" id="new-task-title" placeholder="할 일 제목"
-        style="width: 100%; padding: 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 13px; margin-bottom: 12px;">
-
-      <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">책</label>
-      <select id="new-task-book" style="width: 100%; padding: 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 13px; margin-bottom: 12px;">
-        <option value="">선택 안 함</option>
-        ${bookList}
-      </select>
-
-      <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">목표 시간 (분)</label>
-      <input type="number" id="new-task-time" placeholder="60"
-        style="width: 100%; padding: 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 13px; margin-bottom: 12px;">
-
-      <input type="hidden" id="new-task-date" value="${dateStr}">
-
-      <div style="display: flex; gap: 8px;">
-        <button onclick="confirmAddTaskForDate()" style="flex: 1; padding: 8px; background: #007AFF; color: white; border: none; border-radius: 4px; cursor: pointer;">추가</button>
-        <button onclick="cancelAddTask()" style="flex: 1; padding: 8px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer;">취소</button>
-      </div>
-    </div>
-  `;
-
+  
   setTimeout(() => {
     document.getElementById('new-task-title').focus();
   }, 100);
@@ -1157,7 +1118,7 @@ window.confirmAddTask = async function() {
   const titleInput = document.getElementById('new-task-title');
   const bookSelect = document.getElementById('new-task-book');
   const timeInput = document.getElementById('new-task-time');
-
+  
   const title = titleInput.value.trim();
 
   if (!title) {
@@ -1179,124 +1140,35 @@ window.confirmAddTask = async function() {
       },
       '완료': { checkbox: false }
     };
-
+    
     if (bookSelect.value) {
       properties['책'] = {
         relation: [{ id: bookSelect.value }]
       };
     }
-
+    
     if (timeInput.value) {
       properties['목표 시간'] = {
         number: parseInt(timeInput.value)
       };
     }
-
+    
     const existingPriorities = currentData.results
       .map(t => t.properties?.['우선순위']?.select?.name)
       .filter(Boolean)
       .map(p => parseInt(p.replace(/\D/g, '')));
-
-    const nextPriority = existingPriorities.length > 0
-      ? Math.max(...existingPriorities) + 1
+    
+    const nextPriority = existingPriorities.length > 0 
+      ? Math.max(...existingPriorities) + 1 
       : 1;
-
+    
     if (nextPriority <= 20) {
       const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th'];
       properties['우선순위'] = {
         select: { name: priorityOrder[nextPriority - 1] }
       };
     }
-
-    const notionUrl = 'https://api.notion.com/v1/pages';
-    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${NOTION_API_KEY}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        parent: { database_id: DATABASE_ID },
-        properties: properties
-      })
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.message || '추가 실패');
-    }
-
-    await fetchAllData();
-    completeLoading(`${title} 추가`);
-  } catch (error) {
-    console.error('할 일 추가 오류:', error);
-    completeLoading(`${title} 추가 실패`);
-  } finally {
-    pendingUpdates--;
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
-  }
-};
-
-window.confirmAddTaskForDate = async function() {
-  const titleInput = document.getElementById('new-task-title');
-  const bookSelect = document.getElementById('new-task-book');
-  const timeInput = document.getElementById('new-task-time');
-  const dateInput = document.getElementById('new-task-date');
-
-  const title = titleInput.value.trim();
-
-  if (!title) {
-    return;
-  }
-
-  startLoading(`${title} 추가`);
-
-  pendingUpdates++;
-  try {
-    const targetDate = dateInput.value; // hidden input에서 날짜 가져오기
-
-    const properties = {
-      '범위': {
-        title: [{ text: { content: title } }]
-      },
-      '날짜': {
-        date: { start: targetDate }
-      },
-      '완료': { checkbox: false }
-    };
-
-    if (bookSelect.value) {
-      properties['책'] = {
-        relation: [{ id: bookSelect.value }]
-      };
-    }
-
-    if (timeInput.value) {
-      properties['목표 시간'] = {
-        number: parseInt(timeInput.value)
-      };
-    }
-
-    const existingPriorities = currentData.results
-      .map(t => t.properties?.['우선순위']?.select?.name)
-      .filter(Boolean)
-      .map(p => parseInt(p.replace(/\D/g, '')));
-
-    const nextPriority = existingPriorities.length > 0
-      ? Math.max(...existingPriorities) + 1
-      : 1;
-
-    if (nextPriority <= 20) {
-      const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th'];
-      properties['우선순위'] = {
-        select: { name: priorityOrder[nextPriority - 1] }
-      };
-    }
-
+    
     const notionUrl = 'https://api.notion.com/v1/pages';
     const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
@@ -2375,10 +2247,7 @@ function renderTaskView() {
   let html = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
       <button onclick="changeDate(-1)" style="font-size: 16px; padding: 4px 12px; color: #999;">◀</button>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <h3 class="section-title" style="margin: 0; cursor: pointer;" onclick="goToday()">${dateLabel}</h3>
-        <button onclick="addNewTaskForDate('${targetDateStr}')" style="font-size: 16px; padding: 0; background: none; border: none; cursor: pointer; color: #999;">+</button>
-      </div>
+      <h3 class="section-title" style="margin: 0; cursor: pointer;" onclick="goToday()">${dateLabel}</h3>
       <button onclick="changeDate(1)" style="font-size: 16px; padding: 4px 12px; color: #999;">▶</button>
     </div>
     <div style="font-size: 11px; color: #86868b; margin-bottom: 12px; text-align: center;">
