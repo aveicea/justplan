@@ -25,6 +25,8 @@ let redoStack = []; // 다시 실행 스택
 const MAX_HISTORY = 50; // 최대 히스토리 개수
 let loadingLogs = []; // 로딩 로그 {message: string, status: 'loading'|'completed'}
 let loadingCount = 0; // 진행중인 작업 수
+let pendingUpdates = 0; // 진행 중인 업데이트 API 수
+let needsRefresh = false; // fetchAllData 필요 여부
 
 // 로딩 로그 관리
 function startLoading(message) {
@@ -1676,7 +1678,14 @@ async function fetchData(retryCount = 0) {
 }
 
 async function fetchAllData() {
+  // 진행 중인 업데이트가 있으면 나중에 다시 시도
+  if (pendingUpdates > 0) {
+    needsRefresh = true;
+    return;
+  }
+
   try {
+    needsRefresh = false;
     const notionUrl = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
     const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
@@ -2346,23 +2355,32 @@ async function updateTaskOrder() {
 }
 
 async function updateNotionPage(pageId, properties) {
-  const notionUrl = `https://api.notion.com/v1/pages/${pageId}`;
-  const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `Bearer ${NOTION_API_KEY}`,
-      'Notion-Version': '2022-06-28',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ properties })
-  });
+  pendingUpdates++;
+  try {
+    const notionUrl = `https://api.notion.com/v1/pages/${pageId}`;
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ properties })
+    });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || `Update failed: ${response.status}`);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || `Update failed: ${response.status}`);
+    }
+
+    return await response.json();
+  } finally {
+    pendingUpdates--;
+    // 모든 업데이트가 완료되고 refresh가 필요하면 실행
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
   }
-
-  return await response.json();
 }
 
 function formatDateLabel(dateString) {
