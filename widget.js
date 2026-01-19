@@ -2378,7 +2378,10 @@ function renderTaskView() {
   let html = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
       <button onclick="changeDate(-1)" style="font-size: 16px; padding: 4px 12px; color: #999;">◀</button>
-      <h3 class="section-title" style="margin: 0; cursor: pointer;" onclick="goToday()">${dateLabel}</h3>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <h3 class="section-title" style="margin: 0; cursor: pointer;" onclick="goToday()">${dateLabel}</h3>
+        <button onclick="addNewTaskForDate('${targetDateStr}')" style="font-size: 16px; padding: 0; background: none; border: none; cursor: pointer; color: #999;">+</button>
+      </div>
       <button onclick="changeDate(1)" style="font-size: 16px; padding: 4px 12px; color: #999;">▶</button>
     </div>
     <div style="font-size: 11px; color: #86868b; margin-bottom: 12px; text-align: center;">
