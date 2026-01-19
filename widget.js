@@ -1173,6 +1173,7 @@ window.toggleComplete = async function(taskId, completed) {
 
   // UI 업데이트
   task.properties['완료'].checkbox = completed;
+  scheduleRenderData();
 
   // 백그라운드에서 API 호출
   try {
@@ -1243,6 +1244,7 @@ window.updateTime = async function(taskId, field, value, inputElement) {
   } else {
     task.properties[field].rich_text = [];
   }
+  scheduleRenderData();
 
   startLoading(`${taskTitle} ${fieldName} 수정`);
 
@@ -1408,6 +1410,7 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
 
   // UI 업데이트
   task.properties['목표 시간'].number = timeValue;
+  scheduleRenderData();
 
   startLoading(`${taskTitle} 목표 시간 수정`);
 
@@ -1551,6 +1554,7 @@ window.updateRating = async function(taskId, value) {
 
   // UI 업데이트
   task.properties['(੭•̀ᴗ•̀)੭'] = value ? { select: { name: value } } : { select: null };
+  scheduleRenderData();
 
   startLoading(`${taskTitle} 집중도 수정`);
 
