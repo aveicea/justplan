@@ -1173,6 +1173,7 @@ window.toggleComplete = async function(taskId, completed) {
 
   // UI 업데이트
   task.properties['완료'].checkbox = completed;
+  scheduleRenderData();
 
   // 백그라운드에서 API 호출
   try {
@@ -2053,7 +2054,7 @@ function renderTimelineView() {
       html += `
         <div class="task-item ${completed ? 'completed' : ''}">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-            <div class="task-title ${completed ? 'completed' : ''}" style="flex: 1; cursor: pointer;" onclick="editTask('${task.id}')">${title}</div>
+            <div class="task-title ${completed ? 'completed' : ''}" style="flex: 1; cursor: pointer;" onclick="editTask('${task.id}')" title="클릭: 수정 | +: 당일복제(2) | →: 날짜복제(')">${title}</div>
             <div class="checkbox ${completed ? 'checked' : ''}" onclick="toggleComplete('${task.id}', ${!completed})" 
               style="margin-left: 12px; flex-shrink: 0;">
               ${completed ? '✓' : ''}
@@ -2214,7 +2215,7 @@ function renderTaskView() {
         <div class="drag-handle" style="position: absolute; left: 0; top: 0; bottom: 0; width: 40px; cursor: move; opacity: 0; user-select: none; -webkit-user-select: none; touch-action: none;"></div>
         <div class="task-header" style="flex: 1;">
           <div class="task-content" style="flex: 1;">
-            <div class="task-title ${completed ? 'completed' : ''}" style="cursor: pointer;" onclick="editTask('${task.id}')">${title}</div>
+            <div class="task-title ${completed ? 'completed' : ''}" style="cursor: pointer;" onclick="editTask('${task.id}')" title="클릭: 수정 | →: 날짜복제(')">${title}</div>
             <div style="font-size: 11px; color: #86868b; margin-top: 6px; display: flex; gap: 8px; align-items: center;">
               ${priority ? `<span style="background: #999; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px;">${priority}</span>` : ''}
               <span style="display: flex; align-items: center; gap: 4px;">
