@@ -1840,7 +1840,21 @@ function renderTimelineView() {
       const aStart = a.properties?.['시작']?.rich_text?.[0]?.plain_text || '';
       const bStart = b.properties?.['시작']?.rich_text?.[0]?.plain_text || '';
 
-      if (aStart && bStart) return aStart.localeCompare(bStart);
+      if (aStart && bStart) {
+        // 06:00를 하루의 시작으로 간주 (00:00~05:59는 뒤로 보냄)
+        const adjustTime = (timeStr) => {
+          const hour = parseInt(timeStr.split(':')[0]);
+          if (hour < 6) {
+            // 00:00~05:59 → 24:00~29:59로 변환
+            return String(hour + 24).padStart(2, '0') + timeStr.substring(2);
+          }
+          return timeStr;
+        };
+
+        const aAdjusted = adjustTime(aStart);
+        const bAdjusted = adjustTime(bStart);
+        return aAdjusted.localeCompare(bAdjusted);
+      }
       if (aStart) return -1;
       if (bStart) return 1;
 
