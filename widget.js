@@ -1132,7 +1132,7 @@ window.toggleComplete = async function(taskId, completed) {
       '완료': { checkbox: completed }
     });
     completeLoading(`${taskTitle} ${action}`);
-    scheduleRenderData();
+    await fetchAllData();
   } catch (error) {
     console.error('업데이트 실패:', error);
     completeLoading(`${taskTitle} ${action} 실패`);
@@ -1215,7 +1215,7 @@ window.updateTime = async function(taskId, field, value, inputElement) {
       });
     }
     completeLoading(`${taskTitle} ${fieldName} 수정`);
-    scheduleRenderData();
+    await fetchAllData();
   } catch (error) {
     console.error('시간 업데이트 실패:', error);
     completeLoading(`${taskTitle} ${fieldName} 수정 실패`);
@@ -1364,7 +1364,7 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
     });
 
     completeLoading(`${taskTitle} 목표 시간 수정`);
-    scheduleRenderData();
+    await fetchAllData();
   } catch (error) {
     console.error('목표 시간 업데이트 실패:', error);
     completeLoading(`${taskTitle} 목표 시간 수정 실패`);
@@ -1500,7 +1500,7 @@ window.updateRating = async function(taskId, value) {
       '(੭•̀ᴗ•̀)੭': value ? { select: { name: value } } : { select: null }
     });
     completeLoading(`${taskTitle} 집중도 수정`);
-    scheduleRenderData();
+    await fetchAllData();
   } catch (error) {
     console.error('집중도 업데이트 실패:', error);
     completeLoading(`${taskTitle} 집중도 수정 실패`);
