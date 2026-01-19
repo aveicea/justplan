@@ -61,43 +61,16 @@
       align-items: center;
     }
 
-    .loading-container {
-      position: relative;
+    .loading {
       display: inline-block;
-      margin-right: 4px;
       min-width: 12px;
       min-height: 12px;
-    }
-
-    .loading {
       font-size: 10px;
       color: #999;
+      margin-right: 4px;
       user-select: none;
       -webkit-user-select: none;
       cursor: help;
-    }
-
-    .loading-tooltip {
-      display: none;
-      position: absolute;
-      right: 0;
-      top: 100%;
-      margin-top: 8px;
-      background: rgba(0, 0, 0, 0.9);
-      color: white;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 10px;
-      white-space: pre-line;
-      z-index: 1000;
-      min-width: 250px;
-      max-width: 400px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-      pointer-events: none;
-    }
-
-    .loading-container:hover .loading-tooltip {
-      display: block;
     }
 
     button {
@@ -264,10 +237,7 @@
         <button id="dday-button" onclick="toggleDDaySelector()" style="font-size: 11px; padding: 2px 6px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer;">D-Day</button>
       </div>
       <div class="header-buttons">
-        <div class="loading-container">
-          <span class="loading" id="loading"></span>
-          <div class="loading-tooltip" id="loading-tooltip">작업 로그</div>
-        </div>
+        <span class="loading" id="loading"></span>
         <button id="view-toggle">TIME TABLE</button>
       </div>
     </div>
@@ -281,6 +251,6 @@
     </div>
   </div>
 
-  <script src="widget.js?v=15"></script>
+  <script src="widget.js?v=16"></script>
 </body>
 </html>
