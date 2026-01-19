@@ -958,7 +958,57 @@ window.confirmEditTask = async function(taskId) {
       }
 
       await updateNotionPage(taskId, properties);
-      // fetchAllData 하지 않음 - UI는 이미 업데이트됨
+
+      // currentData 업데이트
+      const task = currentData.results.find(t => t.id === taskId);
+      if (task) {
+        // 제목 업데이트
+        task.properties['범위'].title[0].plain_text = title;
+        task.properties['범위'].title[0].text.content = title;
+
+        // 책 업데이트
+        if (bookSelect.value) {
+          task.properties['책'].relation = [{ id: bookSelect.value }];
+        } else {
+          task.properties['책'].relation = [];
+        }
+
+        // 목표 시간 업데이트
+        if (timeInput.value) {
+          task.properties['목표 시간'].number = parseInt(timeInput.value);
+        }
+
+        // 날짜 업데이트
+        if (dateInput.value) {
+          task.properties['날짜'].date = { start: dateInput.value };
+        }
+
+        // 시작 시간 업데이트
+        if (startInput.value) {
+          const formattedStart = formatTimeInput(startInput.value);
+          task.properties['시작'].rich_text = [{ type: 'text', text: { content: formattedStart }, plain_text: formattedStart }];
+        } else {
+          task.properties['시작'].rich_text = [];
+        }
+
+        // 끝 시간 업데이트
+        if (endInput.value) {
+          const formattedEnd = formatTimeInput(endInput.value);
+          task.properties['끝'].rich_text = [{ type: 'text', text: { content: formattedEnd }, plain_text: formattedEnd }];
+        } else {
+          task.properties['끝'].rich_text = [];
+        }
+
+        // 평점 업데이트
+        if (ratingSelect.value) {
+          task.properties['(੭•̀ᴗ•̀)੭'].select = { name: ratingSelect.value };
+        } else {
+          task.properties['(੭•̀ᴗ•̀)੭'].select = null;
+        }
+
+        scheduleRenderData();
+      }
+
       completeLoading(`${title} 수정`);
     } catch (error) {
       console.error('수정 실패:', error);
