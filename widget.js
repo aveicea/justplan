@@ -65,7 +65,7 @@ function updateLoadingIndicator() {
   if (loadingCount > 0) {
     loading.textContent = '⏳';
   } else {
-    loading.textContent = '\u00A0'; // 빈 공간 유지 (non-breaking space)
+    loading.textContent = '';
   }
 
   loading.title = logText;
