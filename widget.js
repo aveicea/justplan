@@ -127,7 +127,6 @@ async function undo() {
 
     await fetchAllData();
     if (calendarViewMode) {
-      await fetchCalendarData();
       renderCalendarView();
     }
     completeLoading('실행 취소');
@@ -184,7 +183,6 @@ async function redo() {
 
     await fetchAllData();
     if (calendarViewMode) {
-      await fetchCalendarData();
       renderCalendarView();
     }
     completeLoading('다시 실행');
@@ -681,7 +679,6 @@ window.toggleCalendarView = async function(targetDate = null) {
     calendarStartDate.setDate(calendarStartDate.getDate() - 1); // 전날부터 시작
     calendarEndDate = new Date(calendarStartDate);
     calendarEndDate.setDate(calendarEndDate.getDate() + 14);
-    await fetchCalendarData();
     renderCalendarView();
   } else {
     // 프리플랜에서 나가기
@@ -1719,13 +1716,6 @@ async function fetchBookNames() {
     bookRelations.forEach(rel => bookIds.add(rel.id));
   });
 
-  // calendar 데이터베이스의 책 ID 수집
-  if (calendarData && calendarData.results) {
-    calendarData.results.forEach(task => {
-      const bookRelations = task.properties?.['책']?.relation || [];
-      bookRelations.forEach(rel => bookIds.add(rel.id));
-    });
-  }
 
   // 모든 책 데이터를 병렬로 가져오기
   const fetchPromises = Array.from(bookIds)
@@ -2411,14 +2401,14 @@ function updateLastUpdateTime() {
 
 // 프리플랜과 플래너 항목들을 연결하는 헬퍼 함수 (UI 없이)
 async function linkPrePlanToPlannerSilent() {
-  if (!calendarData || !currentData) {
+  if (!currentData) {
     return 0;
   }
 
   let linkCount = 0;
 
   // 프리플랜 항목들을 순회
-  for (const prePlanItem of calendarData.results) {
+  for (const prePlanItem of currentData.results) {
     const prePlanTitle = getCalendarItemTitle(prePlanItem);
     const prePlanBookId = prePlanItem.properties?.['책']?.relation?.[0]?.id;
 
@@ -2496,7 +2486,7 @@ window.linkPrePlanToPlanner = async function() {
   loading.textContent = '⏳';
 
   try {
-    if (!calendarData || !currentData) {
+    if (!currentData) {
       alert('데이터가 로드되지 않았습니다.');
       loading.textContent = '';
       return;
@@ -2506,7 +2496,6 @@ window.linkPrePlanToPlanner = async function() {
     alert(`${linkCount}개 항목 연결 완료`);
 
     // 데이터 새로고침
-    await fetchCalendarData();
     await fetchAllData();
     renderCalendarView();
   } catch (error) {
@@ -2708,7 +2697,7 @@ async function fetchDDayData() {
 }
 
 window.updateCalendarItemDate = async function(itemId, newDate) {
-  const item = calendarData.results.find(t => t.id === itemId);
+  const item = currentData.results.find(t => t.id === itemId);
   if (item && item.properties?.['날짜']) {
     const oldDate = item.properties['날짜'].date?.start;
 
@@ -2794,7 +2783,7 @@ window.saveToPlanner = async function(dateStr) {
   loading.textContent = '⏳';
 
   try {
-    const itemsOnDate = calendarData.results.filter(item => {
+    const itemsOnDate = currentData.results.filter(item => {
       const itemDate = item.properties?.['날짜']?.date?.start;
       return itemDate === dateStr;
     });
@@ -2872,7 +2861,7 @@ window.saveAllToPlanner = async function() {
     let totalSkipped = 0;
 
     // 프리플랜의 모든 항목 순회
-    for (const item of calendarData.results) {
+    for (const item of currentData.results) {
       const title = getCalendarItemTitle(item);
       const dateStart = item.properties?.['날짜']?.date?.start;
       const bookRelation = item.properties?.['책']?.relation?.[0];
@@ -2971,7 +2960,7 @@ window.undoCalendarSync = async function() {
 
     // 되돌리기 후 초기화
     lastSyncedItems = [];
-    await fetchCalendarData();
+    await fetchAllData();
     renderCalendarView();
   } catch (error) {
     console.error('Undo error:', error);
@@ -3035,7 +3024,7 @@ window.syncPlannerToCalendar = async function() {
 
     // 프리플랜에 이미 있는 항목 맵 (제목+책 → 항목)
     const existingCalendarItemsMap = new Map();
-    calendarData.results.forEach(item => {
+    currentData.results.forEach(item => {
       const title = getCalendarItemTitle(item);
       const bookId = item.properties?.['책']?.relation?.[0]?.id || 'no-book';
       const key = `${bookId}:${title}`;
@@ -3091,7 +3080,7 @@ window.syncPlannerToCalendar = async function() {
 
       // pre-plan 속성이 title 타입인지 확인 후 사용
       // 일단 기본 title 속성으로 시도
-      for (const [key, value] of Object.entries(calendarData.results[0]?.properties || {})) {
+      for (const [key, value] of Object.entries(currentData.results[0]?.properties || {})) {
         if (value.type === 'title') {
           properties[key] = {
             title: [{ text: { content: title } }]
@@ -3127,7 +3116,7 @@ window.syncPlannerToCalendar = async function() {
     }
 
     // alert 없이 바로 새로고침
-    await fetchCalendarData();
+    await fetchAllData();
     // 프리플랜-플래너 자동 연결
     await linkPrePlanToPlannerSilent();
     renderCalendarView();
@@ -3150,11 +3139,11 @@ function renderCalendarView() {
   }
 
   // LIST 모드일 때는 프리플랜 리스트 표시
-  if (!calendarData || !calendarData.results) return;
+  if (!currentData || !currentData.results) return;
 
   // 날짜별로 그룹화
   const groupedByDate = {};
-  calendarData.results.forEach(item => {
+  currentData.results.forEach(item => {
     const dateStart = item.properties?.['날짜']?.date?.start;
     if (dateStart) {
       if (!groupedByDate[dateStart]) {
