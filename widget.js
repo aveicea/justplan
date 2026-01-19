@@ -23,21 +23,26 @@ let renderDataTimer = null; // 플래너 렌더링 디바운스용 타이머
 let undoStack = []; // 실행 취소 스택
 let redoStack = []; // 다시 실행 스택
 const MAX_HISTORY = 50; // 최대 히스토리 개수
-let loadingLogs = []; // 로딩 로그
+let loadingLogs = []; // 로딩 로그 {message: string, status: 'loading'|'completed'}
 let loadingCount = 0; // 진행중인 작업 수
 
 // 로딩 로그 관리
 function startLoading(message) {
   loadingCount++;
-  const timestamp = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-  loadingLogs.push(`[${timestamp}] ${message}...`);
+  loadingLogs.push({ message, status: 'loading' });
   updateLoadingIndicator();
 }
 
 function completeLoading(message) {
   loadingCount = Math.max(0, loadingCount - 1);
-  const timestamp = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-  loadingLogs.push(`[${timestamp}] ✓ ${message}`);
+
+  // 마지막으로 등장한 해당 메시지를 찾아서 완료로 변경
+  for (let i = loadingLogs.length - 1; i >= 0; i--) {
+    if (loadingLogs[i].message === message && loadingLogs[i].status === 'loading') {
+      loadingLogs[i].status = 'completed';
+      break;
+    }
+  }
 
   // 최대 20개까지만 유지
   if (loadingLogs.length > 20) {
@@ -49,10 +54,13 @@ function completeLoading(message) {
 
 function updateLoadingIndicator() {
   const loading = document.getElementById('loading');
-  const tooltip = document.getElementById('loading-tooltip');
   if (!loading) return;
 
-  const logText = loadingLogs.length > 0 ? loadingLogs.slice(-10).join('\n') : '작업 로그가 없습니다';
+  const logText = loadingLogs.length > 0
+    ? loadingLogs.slice(-10).map(log =>
+        log.status === 'loading' ? log.message : `${log.message} ✓`
+      ).join('\n')
+    : '작업 로그가 없습니다';
 
   if (loadingCount > 0) {
     loading.textContent = '⏳';
@@ -60,12 +68,6 @@ function updateLoadingIndicator() {
     loading.textContent = '';
   }
 
-  // 커스텀 툴팁 업데이트
-  if (tooltip) {
-    tooltip.textContent = logText;
-  }
-
-  // 기본 title 속성도 유지 (fallback)
   loading.title = logText;
 }
 
