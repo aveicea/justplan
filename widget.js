@@ -25,6 +25,8 @@ let redoStack = []; // 다시 실행 스택
 const MAX_HISTORY = 50; // 최대 히스토리 개수
 let loadingLogs = []; // 로딩 로그 {message: string, status: 'loading'|'completed'}
 let loadingCount = 0; // 진행중인 작업 수
+let pendingUpdates = 0; // 진행 중인 업데이트 API 수
+let needsRefresh = false; // fetchAllData 필요 여부
 
 // 로딩 로그 관리
 function startLoading(message) {
@@ -95,34 +97,44 @@ async function undo() {
       redoStack.push(action);
     } else if (action.type === 'DELETE') {
       // 삭제된 항목 다시 생성
-      const response = await fetch(`${CORS_PROXY}${encodeURIComponent('https://api.notion.com/v1/pages')}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${NOTION_API_KEY}`,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          parent: { database_id: action.databaseId },
-          properties: action.before
-        })
-      });
-      if (response.ok) {
-        const result = await response.json();
-        redoStack.push({...action, itemId: result.id}); // 새로운 ID로 저장
+      pendingUpdates++;
+      try {
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent('https://api.notion.com/v1/pages')}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            parent: { database_id: action.databaseId },
+            properties: action.before
+          })
+        });
+        if (response.ok) {
+          const result = await response.json();
+          redoStack.push({...action, itemId: result.id}); // 새로운 ID로 저장
+        }
+      } finally {
+        pendingUpdates--;
       }
     } else if (action.type === 'CREATE') {
       // 생성된 항목 삭제
-      await fetch(`${CORS_PROXY}${encodeURIComponent(`https://api.notion.com/v1/pages/${action.itemId}`)}`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${NOTION_API_KEY}`,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ archived: true })
-      });
-      redoStack.push(action);
+      pendingUpdates++;
+      try {
+        await fetch(`${CORS_PROXY}${encodeURIComponent(`https://api.notion.com/v1/pages/${action.itemId}`)}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ archived: true })
+        });
+        redoStack.push(action);
+      } finally {
+        pendingUpdates--;
+      }
     }
 
     await fetchAllData();
@@ -133,6 +145,10 @@ async function undo() {
   } catch (error) {
     console.error('Undo failed:', error);
     completeLoading('실행 취소 실패');
+  } finally {
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
   }
 }
 
@@ -151,33 +167,43 @@ async function redo() {
       undoStack.push(action);
     } else if (action.type === 'DELETE') {
       // 다시 삭제
-      await fetch(`${CORS_PROXY}${encodeURIComponent(`https://api.notion.com/v1/pages/${action.itemId}`)}`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${NOTION_API_KEY}`,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ archived: true })
-      });
-      undoStack.push(action);
+      pendingUpdates++;
+      try {
+        await fetch(`${CORS_PROXY}${encodeURIComponent(`https://api.notion.com/v1/pages/${action.itemId}`)}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ archived: true })
+        });
+        undoStack.push(action);
+      } finally {
+        pendingUpdates--;
+      }
     } else if (action.type === 'CREATE') {
       // 다시 생성
-      const response = await fetch(`${CORS_PROXY}${encodeURIComponent('https://api.notion.com/v1/pages')}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${NOTION_API_KEY}`,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          parent: { database_id: action.databaseId },
-          properties: action.after
-        })
-      });
-      if (response.ok) {
-        const result = await response.json();
-        undoStack.push({...action, itemId: result.id});
+      pendingUpdates++;
+      try {
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent('https://api.notion.com/v1/pages')}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            parent: { database_id: action.databaseId },
+            properties: action.after
+          })
+        });
+        if (response.ok) {
+          const result = await response.json();
+          undoStack.push({...action, itemId: result.id});
+        }
+      } finally {
+        pendingUpdates--;
       }
     }
 
@@ -189,6 +215,10 @@ async function redo() {
   } catch (error) {
     console.error('Redo failed:', error);
     completeLoading('다시 실행 실패');
+  } finally {
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
   }
 }
 
@@ -767,8 +797,9 @@ window.duplicateTask = async function(taskId) {
 
   startLoading(`${originalTitle} 복제`);
 
+  pendingUpdates++;
   try {
-    
+
     // (숫자) 찾아서 증가
     const numberMatch = originalTitle.match(/\((\d+)\)$/);
     let newTitle;
@@ -778,7 +809,7 @@ window.duplicateTask = async function(taskId) {
     } else {
       newTitle = originalTitle + ' (2)';
     }
-    
+
     const bookRelation = task.properties?.['책']?.relation?.[0];
     const targetTime = task.properties?.['목표 시간']?.number;
     const dateStart = task.properties?.['날짜']?.date?.start;
@@ -814,7 +845,7 @@ window.duplicateTask = async function(taskId) {
     if (plannerRelation && plannerRelation.length > 0) {
       properties['PLANNER'] = { relation: plannerRelation.map(r => ({ id: r.id })) };
     }
-    
+
     const notionUrl = 'https://api.notion.com/v1/pages';
     const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
@@ -853,6 +884,11 @@ window.duplicateTask = async function(taskId) {
   } catch (error) {
     console.error('복제 실패:', error);
     completeLoading(`${originalTitle} 복제 실패`);
+  } finally {
+    pendingUpdates--;
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
   }
 };
 
@@ -922,7 +958,7 @@ window.confirmEditTask = async function(taskId) {
       }
 
       await updateNotionPage(taskId, properties);
-      await fetchAllData();
+      // fetchAllData 하지 않음 - UI는 이미 업데이트됨
       completeLoading(`${title} 수정`);
     } catch (error) {
       console.error('수정 실패:', error);
@@ -952,6 +988,7 @@ window.deleteTask = async function(taskId) {
 
   // 백그라운드에서 삭제
   (async () => {
+    pendingUpdates++;
     try {
       const notionUrl = `https://api.notion.com/v1/pages/${taskId}`;
       const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
@@ -973,6 +1010,11 @@ window.deleteTask = async function(taskId) {
     } catch (error) {
       console.error('삭제 실패:', error);
       completeLoading(`${taskTitle} 삭제 실패`);
+    } finally {
+      pendingUpdates--;
+      if (pendingUpdates === 0 && needsRefresh) {
+        setTimeout(() => fetchAllData(), 100);
+      }
     }
   })();
 };
@@ -1031,9 +1073,10 @@ window.confirmAddTask = async function() {
 
   startLoading(`${title} 추가`);
 
+  pendingUpdates++;
   try {
     const todayDate = currentDate.toISOString().split('T')[0];
-    
+
     const properties = {
       '범위': {
         title: [{ text: { content: title } }]
@@ -1097,6 +1140,11 @@ window.confirmAddTask = async function() {
   } catch (error) {
     console.error('할 일 추가 오류:', error);
     completeLoading(`${title} 추가 실패`);
+  } finally {
+    pendingUpdates--;
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
   }
 };
 
@@ -1132,7 +1180,7 @@ window.toggleComplete = async function(taskId, completed) {
       '완료': { checkbox: completed }
     });
     completeLoading(`${taskTitle} ${action}`);
-    await fetchAllData();
+    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
   } catch (error) {
     console.error('업데이트 실패:', error);
     completeLoading(`${taskTitle} ${action} 실패`);
@@ -1215,7 +1263,7 @@ window.updateTime = async function(taskId, field, value, inputElement) {
       });
     }
     completeLoading(`${taskTitle} ${fieldName} 수정`);
-    await fetchAllData();
+    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
   } catch (error) {
     console.error('시간 업데이트 실패:', error);
     completeLoading(`${taskTitle} ${fieldName} 수정 실패`);
@@ -1277,6 +1325,7 @@ window.updateDate = async function(taskId, newDate) {
   renderData();
 
   // 백그라운드에서 API 호출
+  pendingUpdates++;
   try {
     const properties = {
       '범위': {
@@ -1335,6 +1384,11 @@ window.updateDate = async function(taskId, newDate) {
     currentData.results = currentData.results.filter(t => t.id !== tempId);
     renderData();
     loading.textContent = '';
+  } finally {
+    pendingUpdates--;
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
   }
 };
 
@@ -1364,7 +1418,7 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
     });
 
     completeLoading(`${taskTitle} 목표 시간 수정`);
-    await fetchAllData();
+    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
   } catch (error) {
     console.error('목표 시간 업데이트 실패:', error);
     completeLoading(`${taskTitle} 목표 시간 수정 실패`);
@@ -1420,6 +1474,7 @@ window.updateDateInTask = async function(taskId, newDate) {
   renderData();
 
   // 백그라운드에서 API 호출
+  pendingUpdates++;
   try {
     const properties = {
       '범위': {
@@ -1478,6 +1533,11 @@ window.updateDateInTask = async function(taskId, newDate) {
     currentData.results = currentData.results.filter(t => t.id !== tempId);
     renderData();
     loading.textContent = '';
+  } finally {
+    pendingUpdates--;
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
   }
 };
 
@@ -1500,7 +1560,7 @@ window.updateRating = async function(taskId, value) {
       '(੭•̀ᴗ•̀)੭': value ? { select: { name: value } } : { select: null }
     });
     completeLoading(`${taskTitle} 집중도 수정`);
-    await fetchAllData();
+    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
   } catch (error) {
     console.error('집중도 업데이트 실패:', error);
     completeLoading(`${taskTitle} 집중도 수정 실패`);
@@ -1676,7 +1736,14 @@ async function fetchData(retryCount = 0) {
 }
 
 async function fetchAllData() {
+  // 진행 중인 업데이트가 있으면 나중에 다시 시도
+  if (pendingUpdates > 0) {
+    needsRefresh = true;
+    return;
+  }
+
   try {
+    needsRefresh = false;
     const notionUrl = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
     const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
@@ -2342,27 +2409,36 @@ async function updateTaskOrder() {
   await Promise.all(updates);
 
   // 즉시 UI 업데이트 (호출하는 곳에서 scheduleRefresh를 호출하므로 여기서는 렌더링만)
-  await fetchAllData();
+  // fetchAllData 하지 않음 - UI는 이미 업데이트됨
 }
 
 async function updateNotionPage(pageId, properties) {
-  const notionUrl = `https://api.notion.com/v1/pages/${pageId}`;
-  const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `Bearer ${NOTION_API_KEY}`,
-      'Notion-Version': '2022-06-28',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ properties })
-  });
+  pendingUpdates++;
+  try {
+    const notionUrl = `https://api.notion.com/v1/pages/${pageId}`;
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ properties })
+    });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || `Update failed: ${response.status}`);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || `Update failed: ${response.status}`);
+    }
+
+    return await response.json();
+  } finally {
+    pendingUpdates--;
+    // 모든 업데이트가 완료되고 refresh가 필요하면 실행
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
   }
-
-  return await response.json();
 }
 
 function formatDateLabel(dateString) {
@@ -2453,24 +2529,30 @@ async function linkPrePlanToPlannerSilent() {
       }
 
       // 프리플랜의 PLANNER 속성에 플래너 항목 연결
-      const prePlanUpdateUrl = `https://api.notion.com/v1/pages/${prePlanItem.id}`;
-      await fetch(`${CORS_PROXY}${encodeURIComponent(prePlanUpdateUrl)}`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${NOTION_API_KEY}`,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          properties: {
-            'PLANNER': {
-              relation: [{ id: matchingPlannerItem.id }]
+      pendingUpdates++;
+      try {
+        const prePlanUpdateUrl = `https://api.notion.com/v1/pages/${prePlanItem.id}`;
+        await fetch(`${CORS_PROXY}${encodeURIComponent(prePlanUpdateUrl)}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            properties: {
+              'PLANNER': {
+                relation: [{ id: matchingPlannerItem.id }]
+              }
             }
-          }
-        })
-      });
+          })
+        });
+      } finally {
+        pendingUpdates--;
+      }
 
       // 플래너의 PRE-PLAN 속성에 프리플랜 항목 연결 (속성이 없을 수 있으므로 에러 무시)
+      pendingUpdates++;
       try {
         const plannerUpdateUrl = `https://api.notion.com/v1/pages/${matchingPlannerItem.id}`;
         await fetch(`${CORS_PROXY}${encodeURIComponent(plannerUpdateUrl)}`, {
@@ -2490,6 +2572,8 @@ async function linkPrePlanToPlannerSilent() {
         });
       } catch (e) {
         // PRE-PLAN 속성이 없는 경우 무시
+      } finally {
+        pendingUpdates--;
       }
 
       linkCount++;
@@ -2593,21 +2677,26 @@ window.duplicateAllIncompleteTasks = async function() {
       }
 
       // 복제 생성
-      const notionUrl = 'https://api.notion.com/v1/pages';
-      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${NOTION_API_KEY}`,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          parent: { database_id: DATABASE_ID },
-          properties: properties
-        })
-      });
+      pendingUpdates++;
+      try {
+        const notionUrl = 'https://api.notion.com/v1/pages';
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            parent: { database_id: DATABASE_ID },
+            properties: properties
+          })
+        });
 
-      if (!response.ok) continue;
+        if (!response.ok) continue;
+      } finally {
+        pendingUpdates--;
+      }
     }
 
     // 즉시 UI 업데이트
@@ -2615,6 +2704,10 @@ window.duplicateAllIncompleteTasks = async function() {
   } catch (error) {
     console.error('전체 복제 실패:', error);
     loading.textContent = '';
+  } finally {
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
   }
 };
 
@@ -2755,7 +2848,7 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
       completeLoading(`${itemTitle} 날짜 변경`);
 
       // UI 업데이트
-      await fetchAllData();
+      // fetchAllData 하지 않음 - UI는 이미 업데이트됨
       if (calendarViewMode) {
         renderCalendarView();
       }
@@ -2838,24 +2931,29 @@ window.saveToPlanner = async function(dateStr) {
         properties['책'] = { relation: [{ id: bookRelation.id }] };
       }
 
-      const notionUrl = 'https://api.notion.com/v1/pages';
-      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${NOTION_API_KEY}`,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          parent: { database_id: DATABASE_ID },
-          properties: properties
-        })
-      });
+      pendingUpdates++;
+      try {
+        const notionUrl = 'https://api.notion.com/v1/pages';
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            parent: { database_id: DATABASE_ID },
+            properties: properties
+          })
+        });
 
-      if (!response.ok) {
-        throw new Error('플래너에 저장 실패');
+        if (!response.ok) {
+          throw new Error('플래너에 저장 실패');
+        }
+        addedCount++;
+      } finally {
+        pendingUpdates--;
       }
-      addedCount++;
     }
 
     // alert 없이 바로 새로고침
@@ -2865,6 +2963,9 @@ window.saveToPlanner = async function(dateStr) {
   } catch (error) {
     console.error('Save error:', error);
   } finally {
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
     loading.textContent = '';
   }
 };
@@ -2911,25 +3012,30 @@ window.saveAllToPlanner = async function() {
         properties['책'] = { relation: [{ id: bookRelation.id }] };
       }
 
-      const notionUrl = 'https://api.notion.com/v1/pages';
-      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${NOTION_API_KEY}`,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          parent: { database_id: DATABASE_ID },
-          properties: properties
-        })
-      });
+      pendingUpdates++;
+      try {
+        const notionUrl = 'https://api.notion.com/v1/pages';
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            parent: { database_id: DATABASE_ID },
+            properties: properties
+          })
+        });
 
-      if (!response.ok) {
-        console.error('플래너 저장 실패:', title);
-        continue;
+        if (!response.ok) {
+          console.error('플래너 저장 실패:', title);
+          continue;
+        }
+        totalAdded++;
+      } finally {
+        pendingUpdates--;
       }
-      totalAdded++;
     }
 
     // alert 없이 바로 새로고침
@@ -2939,6 +3045,9 @@ window.saveAllToPlanner = async function() {
   } catch (error) {
     console.error('Save all error:', error);
   } finally {
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
     loading.textContent = '';
   }
 };
@@ -2955,23 +3064,28 @@ window.undoCalendarSync = async function() {
     // 마지막 동기화로 생성된 항목들을 삭제
     let deletedCount = 0;
     for (const itemId of lastSyncedItems) {
-      const notionUrl = `https://api.notion.com/v1/pages/${itemId}`;
-      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${NOTION_API_KEY}`,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          archived: true
-        })
-      });
+      pendingUpdates++;
+      try {
+        const notionUrl = `https://api.notion.com/v1/pages/${itemId}`;
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            archived: true
+          })
+        });
 
-      if (response.ok) {
-        deletedCount++;
-      } else {
-        console.error('삭제 실패:', itemId, response.status);
+        if (response.ok) {
+          deletedCount++;
+        } else {
+          console.error('삭제 실패:', itemId, response.status);
+        }
+      } finally {
+        pendingUpdates--;
       }
     }
 
@@ -2982,6 +3096,9 @@ window.undoCalendarSync = async function() {
   } catch (error) {
     console.error('Undo error:', error);
   } finally {
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
     loading.textContent = '';
   }
 };
@@ -3066,23 +3183,28 @@ window.syncPlannerToCalendar = async function() {
         const existingDate = existingItem.properties?.['날짜']?.date?.start;
         if (existingDate !== dateStart) {
           // 날짜가 다르면 업데이트
-          const notionUrl = `https://api.notion.com/v1/pages/${existingItem.id}`;
-          const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-            method: 'PATCH',
-            headers: {
-              'Authorization': `Bearer ${NOTION_API_KEY}`,
-              'Notion-Version': '2022-06-28',
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              properties: {
-                '날짜': { date: { start: dateStart } }
-              }
-            })
-          });
+          pendingUpdates++;
+          try {
+            const notionUrl = `https://api.notion.com/v1/pages/${existingItem.id}`;
+            const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+              method: 'PATCH',
+              headers: {
+                'Authorization': `Bearer ${NOTION_API_KEY}`,
+                'Notion-Version': '2022-06-28',
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                properties: {
+                  '날짜': { date: { start: dateStart } }
+                }
+              })
+            });
 
-          if (response.ok) {
-            updateCount++;
+            if (response.ok) {
+              updateCount++;
+            }
+          } finally {
+            pendingUpdates--;
           }
         }
         continue; // 이미 있으면 새로 생성은 하지 않음
@@ -3110,25 +3232,30 @@ window.syncPlannerToCalendar = async function() {
         properties['책'] = { relation: [{ id: bookRelation.id }] };
       }
 
-      const notionUrl = 'https://api.notion.com/v1/pages';
-      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${NOTION_API_KEY}`,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          parent: { database_id: CALENDAR_DB_ID },
-          properties: properties
-        })
-      });
+      pendingUpdates++;
+      try {
+        const notionUrl = 'https://api.notion.com/v1/pages';
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            parent: { database_id: CALENDAR_DB_ID },
+            properties: properties
+          })
+        });
 
-      if (response.ok) {
-        const result = await response.json();
-        // 새로 생성된 항목 ID 저장
-        lastSyncedItems.push(result.id);
-        syncCount++;
+        if (response.ok) {
+          const result = await response.json();
+          // 새로 생성된 항목 ID 저장
+          lastSyncedItems.push(result.id);
+          syncCount++;
+        }
+      } finally {
+        pendingUpdates--;
       }
     }
 
@@ -3140,6 +3267,9 @@ window.syncPlannerToCalendar = async function() {
   } catch (error) {
     console.error('Sync error:', error);
   } finally {
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
     loading.textContent = '';
   }
 };
