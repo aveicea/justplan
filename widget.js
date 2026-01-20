@@ -28,6 +28,7 @@ let loadingCount = 0; // 진행중인 작업 수
 let pendingUpdates = 0; // 진행 중인 업데이트 API 수
 let needsRefresh = false; // fetchAllData 필요 여부
 let editTaskReturnView = 'planner'; // editTask 호출 시 돌아갈 뷰 ('planner' | 'list')
+let addTaskReturnView = 'planner'; // addTask 호출 시 돌아갈 뷰 ('planner' | 'list')
 
 // 로딩 로그 관리
 function startLoading(message) {
@@ -1327,6 +1328,14 @@ window.confirmAddTaskForDate = async function() {
     }
 
     await fetchAllData();
+
+    // 추가 후 적절한 뷰로 돌아가기
+    if (addTaskReturnView === 'list') {
+      renderCalendarView();
+    } else {
+      renderData();
+    }
+
     completeLoading(`${title} 추가`);
   } catch (error) {
     console.error('할 일 추가 오류:', error);
@@ -1340,7 +1349,11 @@ window.confirmAddTaskForDate = async function() {
 };
 
 window.cancelAddTask = function() {
-  renderData();
+  if (addTaskReturnView === 'list') {
+    renderCalendarView();
+  } else {
+    renderData();
+  }
 };
 
 window.toggleComplete = async function(taskId, completed) {
@@ -3524,7 +3537,7 @@ function renderCalendarView() {
       <div style="margin-bottom: 20px;">
         <div style="display: flex; align-items: center; margin-bottom: 8px; gap: 8px;">
           <h4 style="${dateStyle} cursor: pointer;" onclick="toggleCalendarView('${dateStr}')" title="플래너로 이동">${dateLabel}</h4>
-          <button onclick="addNewTaskForDate('${dateStr}')" style="font-size: 16px; padding: 0; background: none; border: none; cursor: pointer; color: #999;">+</button>
+          <button onclick="addTaskReturnView='list'; addNewTaskForDate('${dateStr}')" style="font-size: 16px; padding: 0; background: none; border: none; cursor: pointer; color: #999;">+</button>
         </div>
         <div class="calendar-date-group" data-date="${dateStr}">
     `;
