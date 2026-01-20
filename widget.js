@@ -10,250 +10,12 @@ let calendarData = null;
 let ddayData = null;
 let bookNames = {};
 let currentDate = new Date();
-currentDate.setHours(0, 0, 0, 0); // 초기화 시 시간을 00:00:00으로 설정
 let calendarViewMode = false;
 let calendarStartDate = new Date();
 let calendarEndDate = new Date();
 let lastSyncedItems = []; // 마지막 동기화로 생성된 항목 ID들
 let dDayDate = localStorage.getItem('dDayDate') || null; // D-Day 날짜
 let dDayTitle = localStorage.getItem('dDayTitle') || null; // D-Day 제목
-let refreshTimer = null; // 디바운스용 타이머
-let renderTimer = null; // 렌더링 디바운스용 타이머
-let renderDataTimer = null; // 플래너 렌더링 디바운스용 타이머
-let undoStack = []; // 실행 취소 스택
-let redoStack = []; // 다시 실행 스택
-const MAX_HISTORY = 50; // 최대 히스토리 개수
-let loadingLogs = []; // 로딩 로그 {message: string, status: 'loading'|'completed'}
-let loadingCount = 0; // 진행중인 작업 수
-let pendingUpdates = 0; // 진행 중인 업데이트 API 수
-let needsRefresh = false; // fetchAllData 필요 여부
-let editTaskReturnView = 'planner'; // editTask 호출 시 돌아갈 뷰 ('planner' | 'list')
-let addTaskReturnView = 'planner'; // addTask 호출 시 돌아갈 뷰 ('planner' | 'list')
-
-// 로딩 로그 관리
-function startLoading(message) {
-  loadingCount++;
-  loadingLogs.push({ message, status: 'loading' });
-  updateLoadingIndicator();
-}
-
-function completeLoading(message) {
-  loadingCount = Math.max(0, loadingCount - 1);
-
-  // 마지막으로 등장한 해당 메시지를 찾아서 완료로 변경
-  for (let i = loadingLogs.length - 1; i >= 0; i--) {
-    if (loadingLogs[i].message === message && loadingLogs[i].status === 'loading') {
-      loadingLogs[i].status = 'completed';
-      break;
-    }
-  }
-
-  // 최대 20개까지만 유지
-  if (loadingLogs.length > 20) {
-    loadingLogs = loadingLogs.slice(-20);
-  }
-
-  updateLoadingIndicator();
-}
-
-function updateLoadingIndicator() {
-  const loading = document.getElementById('loading');
-  if (!loading) return;
-
-  const logText = loadingLogs.length > 0
-    ? loadingLogs.slice(-10).map(log =>
-        log.status === 'loading' ? log.message : `${log.message} ✓`
-      ).join('\n')
-    : '작업 로그가 없습니다';
-
-  if (loadingCount > 0) {
-    loading.textContent = '⏳';
-  } else {
-    loading.textContent = '';
-  }
-
-  loading.title = logText;
-}
-
-// 히스토리에 작업 추가
-function addToHistory(action) {
-  undoStack.push(action);
-  if (undoStack.length > MAX_HISTORY) {
-    undoStack.shift(); // 오래된 항목 제거
-  }
-  redoStack = []; // 새 작업이 추가되면 redo 스택 초기화
-}
-
-// 실행 취소
-async function undo() {
-  if (undoStack.length === 0) return;
-
-  const action = undoStack.pop();
-
-  startLoading('실행 취소');
-
-  try {
-    if (action.type === 'UPDATE') {
-      // 이전 상태로 복원
-      await updateNotionPage(action.itemId, action.before);
-      redoStack.push(action);
-    } else if (action.type === 'DELETE') {
-      // 삭제된 항목 다시 생성
-      pendingUpdates++;
-      try {
-        const response = await fetch(`${CORS_PROXY}${encodeURIComponent('https://api.notion.com/v1/pages')}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${NOTION_API_KEY}`,
-            'Notion-Version': '2022-06-28',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            parent: { database_id: action.databaseId },
-            properties: action.before
-          })
-        });
-        if (response.ok) {
-          const result = await response.json();
-          redoStack.push({...action, itemId: result.id}); // 새로운 ID로 저장
-        }
-      } finally {
-        pendingUpdates--;
-      }
-    } else if (action.type === 'CREATE') {
-      // 생성된 항목 삭제
-      pendingUpdates++;
-      try {
-        await fetch(`${CORS_PROXY}${encodeURIComponent(`https://api.notion.com/v1/pages/${action.itemId}`)}`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${NOTION_API_KEY}`,
-            'Notion-Version': '2022-06-28',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ archived: true })
-        });
-        redoStack.push(action);
-      } finally {
-        pendingUpdates--;
-      }
-    }
-
-    await fetchAllData();
-    if (calendarViewMode) {
-      renderCalendarView();
-    }
-    completeLoading('실행 취소');
-  } catch (error) {
-    console.error('Undo failed:', error);
-    completeLoading('실행 취소 실패');
-  } finally {
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
-  }
-}
-
-// 다시 실행
-async function redo() {
-  if (redoStack.length === 0) return;
-
-  const action = redoStack.pop();
-
-  startLoading('다시 실행');
-
-  try {
-    if (action.type === 'UPDATE') {
-      // 이후 상태로 복원
-      await updateNotionPage(action.itemId, action.after);
-      undoStack.push(action);
-    } else if (action.type === 'DELETE') {
-      // 다시 삭제
-      pendingUpdates++;
-      try {
-        await fetch(`${CORS_PROXY}${encodeURIComponent(`https://api.notion.com/v1/pages/${action.itemId}`)}`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${NOTION_API_KEY}`,
-            'Notion-Version': '2022-06-28',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ archived: true })
-        });
-        undoStack.push(action);
-      } finally {
-        pendingUpdates--;
-      }
-    } else if (action.type === 'CREATE') {
-      // 다시 생성
-      pendingUpdates++;
-      try {
-        const response = await fetch(`${CORS_PROXY}${encodeURIComponent('https://api.notion.com/v1/pages')}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${NOTION_API_KEY}`,
-            'Notion-Version': '2022-06-28',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            parent: { database_id: action.databaseId },
-            properties: action.after
-          })
-        });
-        if (response.ok) {
-          const result = await response.json();
-          undoStack.push({...action, itemId: result.id});
-        }
-      } finally {
-        pendingUpdates--;
-      }
-    }
-
-    await fetchAllData();
-    if (calendarViewMode) {
-      renderCalendarView();
-    }
-    completeLoading('다시 실행');
-  } catch (error) {
-    console.error('Redo failed:', error);
-    completeLoading('다시 실행 실패');
-  } finally {
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
-  }
-}
-
-// 디바운스된 새로고침 함수
-function scheduleRefresh() {
-  if (refreshTimer) {
-    clearTimeout(refreshTimer);
-  }
-  refreshTimer = setTimeout(() => {
-    fetchAllData();
-    refreshTimer = null;
-  }, 2000); // 2초 후 새로고침
-}
-
-function scheduleRender() {
-  if (renderTimer) {
-    clearTimeout(renderTimer);
-  }
-  renderTimer = setTimeout(() => {
-    renderCalendarView();
-    renderTimer = null;
-  }, 500); // 0.5초 후 렌더링
-}
-
-function scheduleRenderData() {
-  if (renderDataTimer) {
-    clearTimeout(renderDataTimer);
-  }
-  renderDataTimer = setTimeout(() => {
-    renderData();
-    renderDataTimer = null;
-  }, 300); // 0.3초 후 렌더링
-}
 
 // 전역 함수 등록
 window.changeDate = function(days) {
@@ -484,8 +246,12 @@ function autoSelectClosestDDay() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  console.log('=== D-Day 디버그 ===');
+  console.log('필터링된 항목 수:', ddayData.results.length);
+
   // API에서 이미 필터링되고 정렬된 데이터
   if (ddayData.results.length === 0) {
+    console.log('디데이 표시된 미래 항목이 없습니다.');
     return;
   }
 
@@ -583,10 +349,10 @@ function renderPlannerCalendarHTML() {
   `;
 
   const currentLoop = new Date(calendarStart);
-  const todayStr = formatDateToLocalString(today);
+  const todayStr = today.toISOString().split('T')[0];
 
   while (currentLoop <= calendarEnd) {
-    const dateStr = formatDateToLocalString(currentLoop);
+    const dateStr = currentLoop.toISOString().split('T')[0];
     const date = currentLoop.getDate();
     const isCurrentMonth = currentLoop.getMonth() === month;
     const isToday = dateStr === todayStr;
@@ -654,10 +420,11 @@ function renderPlannerCalendarHTML() {
 }
 
 window.goToDate = function(dateStr) {
-  // YYYY-MM-DD 형식을 로컬 날짜로 변환
+  // YYYY-MM-DD 형식을 로컬 날짜로 변환 (하루 더하기)
   const [year, month, day] = dateStr.split('-').map(Number);
   currentDate = new Date(year, month - 1, day);
-  currentDate.setHours(0, 0, 0, 0); // 시간을 명시적으로 00:00:00으로 설정
+  currentDate.setDate(currentDate.getDate() + 1); // 하루 더하기
+  currentDate.setHours(0, 0, 0, 0);
   calendarViewMode = false;
   plannerCalendarViewMode = false;
   const viewToggle = document.getElementById('view-toggle');
@@ -682,40 +449,33 @@ function getDDayString() {
 }
 
 window.toggleCalendarView = async function(targetDate = null) {
-  const viewToggle = document.getElementById('view-toggle');
-
-  // targetDate가 있으면 날짜를 설정하고 캘린더 뷰에서 나가기
-  if (targetDate) {
-    // YYYY-MM-DD 형식을 로컬 날짜로 변환
-    const [year, month, day] = targetDate.split('-').map(Number);
-    currentDate = new Date(year, month - 1, day);
-    currentDate.setHours(0, 0, 0, 0); // 시간을 명시적으로 00:00:00으로 설정
-    calendarViewMode = false;
-    plannerCalendarViewMode = false;
-    viewToggle.textContent = viewMode === 'timeline' ? 'TIME TABLE' : 'TASK';
-    renderData();
-    return;
-  }
-
-  // targetDate가 없으면 일반 토글
   calendarViewMode = !calendarViewMode;
+  const viewToggle = document.getElementById('view-toggle');
 
   if (calendarViewMode) {
     // 프리플랜으로 진입
     plannerCalendarViewMode = false;
     viewToggle.textContent = 'LIST';
 
-    // 전날부터 2주 보기
+    // 오늘 기준으로 앞으로 2주 보기
     calendarStartDate = new Date();
     calendarStartDate.setHours(0, 0, 0, 0);
-    calendarStartDate.setDate(calendarStartDate.getDate() - 1); // 전날부터 시작
     calendarEndDate = new Date(calendarStartDate);
     calendarEndDate.setDate(calendarEndDate.getDate() + 14);
+    await fetchCalendarData();
     renderCalendarView();
   } else {
     // 프리플랜에서 나가기
     plannerCalendarViewMode = false;
     viewToggle.textContent = viewMode === 'timeline' ? 'TIME TABLE' : 'TASK';
+
+    // targetDate가 있으면 해당 날짜로 이동 (하루 더하기)
+    if (targetDate) {
+      const [year, month, day] = targetDate.split('-').map(Number);
+      currentDate = new Date(year, month - 1, day);
+      currentDate.setDate(currentDate.getDate() + 1); // 하루 더하기
+      currentDate.setHours(0, 0, 0, 0);
+    }
     renderData();
   }
 };
@@ -794,14 +554,13 @@ window.editTask = async function(taskId) {
 window.duplicateTask = async function(taskId) {
   const task = currentData.results.find(t => t.id === taskId);
   if (!task) return;
-
-  const originalTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '';
-
-  startLoading(`${originalTitle} 당일 복제`);
-
-  pendingUpdates++;
+  
+  const loading = document.getElementById('loading');
+  loading.textContent = '⏳';
+  
   try {
-
+    const originalTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '';
+    
     // (숫자) 찾아서 증가
     const numberMatch = originalTitle.match(/\((\d+)\)$/);
     let newTitle;
@@ -811,11 +570,10 @@ window.duplicateTask = async function(taskId) {
     } else {
       newTitle = originalTitle + ' (2)';
     }
-
+    
     const bookRelation = task.properties?.['책']?.relation?.[0];
     const targetTime = task.properties?.['목표 시간']?.number;
     const dateStart = task.properties?.['날짜']?.date?.start;
-    const plannerRelation = task.properties?.['PLANNER']?.relation;
     // 시작/끝 시간은 복제하지 않음
 
     const properties = {
@@ -836,18 +594,13 @@ window.duplicateTask = async function(taskId) {
     if (dateStart) {
       properties['날짜'] = { date: { start: dateStart } };
     }
-
+    
     // 우선순위 복사
     const priority = task.properties?.['우선순위']?.select?.name;
     if (priority) {
       properties['우선순위'] = { select: { name: priority } };
     }
-
-    // PLANNER 관계형 복사
-    if (plannerRelation && plannerRelation.length > 0) {
-      properties['PLANNER'] = { relation: plannerRelation.map(r => ({ id: r.id })) };
-    }
-
+    
     const notionUrl = 'https://api.notion.com/v1/pages';
     const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
@@ -863,34 +616,11 @@ window.duplicateTask = async function(taskId) {
     });
 
     if (!response.ok) throw new Error('복제 실패');
-
-    // 원본 항목을 완료 처리
-    const updateUrl = `https://api.notion.com/v1/pages/${taskId}`;
-    await fetch(`${CORS_PROXY}${encodeURIComponent(updateUrl)}`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${NOTION_API_KEY}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        properties: {
-          '완료': { checkbox: true }
-        }
-      })
-    });
-
-    // 즉시 UI 업데이트
-    await fetchAllData();
-    completeLoading(`${originalTitle} 당일 복제`);
+    
+    setTimeout(() => fetchAllData(), 500);
   } catch (error) {
     console.error('복제 실패:', error);
-    completeLoading(`${originalTitle} 당일 복제 실패`);
-  } finally {
-    pendingUpdates--;
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
+    loading.textContent = '';
   }
 };
 
@@ -909,66 +639,14 @@ window.confirmEditTask = async function(taskId) {
     return;
   }
 
-  // currentData 먼저 업데이트 (즉시 UI 반영용)
-  const task = currentData.results.find(t => t.id === taskId);
-  if (task) {
-    // 제목
-    task.properties['범위'].title[0].plain_text = title;
-    task.properties['범위'].title[0].text.content = title;
+  const loading = document.getElementById('loading');
+  loading.textContent = '⏳';
 
-    // 책
-    if (bookSelect.value) {
-      task.properties['책'].relation = [{ id: bookSelect.value }];
-    } else {
-      task.properties['책'].relation = [];
-    }
+  // 바로 창 닫기
+  renderData();
 
-    // 목표 시간
-    if (timeInput.value) {
-      task.properties['목표 시간'].number = parseInt(timeInput.value);
-    }
-
-    // 날짜
-    if (dateInput.value) {
-      task.properties['날짜'].date = { start: dateInput.value };
-    }
-
-    // 시작 시간
-    if (startInput.value) {
-      const formattedStart = formatTimeInput(startInput.value);
-      task.properties['시작'].rich_text = [{ type: 'text', text: { content: formattedStart }, plain_text: formattedStart }];
-    } else {
-      task.properties['시작'].rich_text = [];
-    }
-
-    // 끝 시간
-    if (endInput.value) {
-      const formattedEnd = formatTimeInput(endInput.value);
-      task.properties['끝'].rich_text = [{ type: 'text', text: { content: formattedEnd }, plain_text: formattedEnd }];
-    } else {
-      task.properties['끝'].rich_text = [];
-    }
-
-    // 평점
-    if (ratingSelect.value) {
-      task.properties['(੭•̀ᴗ•̀)੭'].select = { name: ratingSelect.value };
-    } else {
-      task.properties['(੭•̀ᴗ•̀)੭'].select = null;
-    }
-  }
-
-  // 수정된 데이터로 화면 표시하고 나가기
-  if (editTaskReturnView === 'list') {
-    renderCalendarView();
-  } else {
-    renderData();
-  }
-
-  startLoading(`${title} 수정`);
-
-  // 백그라운드에서 서버에 저장
+  // 백그라운드에서 업데이트
   (async () => {
-    pendingUpdates++;
     try {
       const properties = {
         '범위': {
@@ -990,20 +668,14 @@ window.confirmEditTask = async function(taskId) {
         properties['날짜'] = { date: { start: dateInput.value } };
       }
 
-      // 시작 시간 (빈 값도 업데이트)
       if (startInput.value) {
         const formattedStart = formatTimeInput(startInput.value);
         properties['시작'] = { rich_text: [{ type: 'text', text: { content: formattedStart } }] };
-      } else {
-        properties['시작'] = { rich_text: [] };
       }
 
-      // 끝 시간 (빈 값도 업데이트)
       if (endInput.value) {
         const formattedEnd = formatTimeInput(endInput.value);
         properties['끝'] = { rich_text: [{ type: 'text', text: { content: formattedEnd } }] };
-      } else {
-        properties['끝'] = { rich_text: [] };
       }
 
       if (ratingSelect.value) {
@@ -1013,42 +685,23 @@ window.confirmEditTask = async function(taskId) {
       }
 
       await updateNotionPage(taskId, properties);
-      await fetchAllData();
-      completeLoading(`${title} 수정`);
+      setTimeout(() => fetchAllData(), 500);
     } catch (error) {
       console.error('수정 실패:', error);
-      completeLoading(`${title} 수정 실패`);
-    } finally {
-      pendingUpdates--;
-      if (pendingUpdates === 0 && needsRefresh) {
-        setTimeout(() => fetchAllData(), 100);
-      }
+      loading.textContent = '';
     }
   })();
 };
 
 window.deleteTask = async function(taskId) {
-  const task = currentData.results.find(t => t.id === taskId);
-  if (!task) return;
-
-  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
-
-  startLoading(`${taskTitle} 삭제`);
-
-  // 히스토리에 추가 (삭제 전 상태 저장)
-  addToHistory({
-    type: 'DELETE',
-    itemId: taskId,
-    databaseId: DATABASE_ID,
-    before: task.properties
-  });
+  const loading = document.getElementById('loading');
+  loading.textContent = '⏳';
 
   // 바로 창 닫기
   renderData();
 
   // 백그라운드에서 삭제
   (async () => {
-    pendingUpdates++;
     try {
       const notionUrl = `https://api.notion.com/v1/pages/${taskId}`;
       const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
@@ -1065,29 +718,30 @@ window.deleteTask = async function(taskId) {
 
       if (!response.ok) throw new Error('삭제 실패');
 
-      await fetchAllData();
-      completeLoading(`${taskTitle} 삭제`);
+      setTimeout(() => fetchAllData(), 500);
     } catch (error) {
       console.error('삭제 실패:', error);
-      completeLoading(`${taskTitle} 삭제 실패`);
-    } finally {
-      pendingUpdates--;
-      if (pendingUpdates === 0 && needsRefresh) {
-        setTimeout(() => fetchAllData(), 100);
-      }
+      loading.textContent = '';
     }
   })();
 };
 
 window.cancelEdit = function() {
-  if (editTaskReturnView === 'list') {
-    renderCalendarView();
-  } else {
-    renderData();
-  }
+  renderData();
+};
+
+window.addNewTaskForDate = function(dateStr) {
+  // 날짜를 설정하고 할 일 추가 창 열기
+  const [year, month, day] = dateStr.split('-').map(Number);
+  currentDate = new Date(year, month - 1, day);
+  currentDate.setHours(0, 0, 0, 0);
+  addTaskReturnView = 'list';
+  addNewTask();
 };
 
 window.addNewTask = async function() {
+  console.log('addNewTask 호출됨!');
+  
   const bookList = Object.entries(bookNames).map(([id, name]) => 
     `<option value="${id}">${name}</option>`
   ).join('');
@@ -1134,13 +788,13 @@ window.confirmAddTask = async function() {
   if (!title) {
     return;
   }
-
-  startLoading(`${title} 추가`);
-
-  pendingUpdates++;
+  
+  const loading = document.getElementById('loading');
+  loading.textContent = '⏳';
+  
   try {
     const todayDate = currentDate.toISOString().split('T')[0];
-
+    
     const properties = {
       '범위': {
         title: [{ text: { content: title } }]
@@ -1172,8 +826,8 @@ window.confirmAddTask = async function() {
       ? Math.max(...existingPriorities) + 1 
       : 1;
     
-    if (nextPriority <= 20) {
-      const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th'];
+    if (nextPriority <= 10) {
+      const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
       properties['우선순위'] = {
         select: { name: priorityOrder[nextPriority - 1] }
       };
@@ -1194,76 +848,49 @@ window.confirmAddTask = async function() {
     });
 
     const result = await response.json();
+    console.log('추가 결과:', result);
 
     if (!response.ok) {
       throw new Error(result.message || '추가 실패');
     }
-
-    await fetchAllData();
-
-    // 추가 후 적절한 뷰로 돌아가기
-    if (addTaskReturnView === 'list') {
-      renderCalendarView();
-    } else {
-      renderData();
-    }
-
-    completeLoading(`${title} 추가`);
+    
+    setTimeout(() => fetchAllData(), 500);
   } catch (error) {
     console.error('할 일 추가 오류:', error);
-    completeLoading(`${title} 추가 실패`);
   } finally {
-    pendingUpdates--;
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
+    loading.textContent = '';
   }
 };
 
 window.cancelAddTask = function() {
-  if (addTaskReturnView === 'list') {
-    renderCalendarView();
-  } else {
-    renderData();
-  }
+  renderData();
 };
 
 window.toggleComplete = async function(taskId, completed) {
+  const loading = document.getElementById('loading');
+  loading.textContent = '⏳';
+
   // 백업
   const task = currentData.results.find(t => t.id === taskId);
   if (!task) return;
   const originalCompleted = task.properties['완료'].checkbox;
 
-  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
-  const action = completed ? '완료 처리' : '미완료 처리';
-
-  startLoading(`${taskTitle} ${action}`);
-
-  // 히스토리에 추가
-  addToHistory({
-    type: 'UPDATE',
-    itemId: taskId,
-    before: { '완료': { checkbox: originalCompleted } },
-    after: { '완료': { checkbox: completed } }
-  });
-
-  // UI 업데이트
+  // UI 즉시 업데이트
   task.properties['완료'].checkbox = completed;
-  scheduleRenderData();
+  renderData();
 
   // 백그라운드에서 API 호출
   try {
     await updateNotionPage(taskId, {
       '완료': { checkbox: completed }
     });
-    completeLoading(`${taskTitle} ${action}`);
-    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
+    setTimeout(() => fetchAllData(), 500);
   } catch (error) {
     console.error('업데이트 실패:', error);
-    completeLoading(`${taskTitle} ${action} 실패`);
     // 실패시 롤백
     task.properties['완료'].checkbox = originalCompleted;
-    scheduleRenderData();
+    renderData();
+    loading.textContent = '';
   }
 };
 
@@ -1302,13 +929,13 @@ window.updateTime = async function(taskId, field, value, inputElement) {
     inputElement.value = formattedValue;
   }
 
+  const loading = document.getElementById('loading');
+  loading.textContent = '⏳';
+
   // 백업
   const task = currentData.results.find(t => t.id === taskId);
   if (!task) return;
   const originalValue = task.properties[field]?.rich_text?.[0]?.plain_text || '';
-
-  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
-  const fieldName = field === '시작' ? '시작 시간' : '끝 시간';
 
   // UI 즉시 업데이트 (빈 값이든 아니든)
   if (!task.properties[field]) {
@@ -1320,37 +947,32 @@ window.updateTime = async function(taskId, field, value, inputElement) {
   } else {
     task.properties[field].rich_text = [];
   }
+  renderData();
 
-  startLoading(`${taskTitle} ${fieldName} 수정`);
+  // 빈 값이면 API 호출만 안 함
+  if (!formattedValue.trim()) {
+    loading.textContent = '';
+    return;
+  }
 
-  // 백그라운드에서 API 호출 (빈 값이어도 서버에 업데이트)
+  // 백그라운드에서 API 호출
   try {
-    if (formattedValue.trim()) {
-      await updateNotionPage(taskId, {
-        [field]: {
-          rich_text: [{ type: 'text', text: { content: formattedValue } }]
-        }
-      });
-    } else {
-      // 빈 값으로 업데이트 (서버에서도 지움)
-      await updateNotionPage(taskId, {
-        [field]: {
-          rich_text: []
-        }
-      });
-    }
-    completeLoading(`${taskTitle} ${fieldName} 수정`);
-    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
+    await updateNotionPage(taskId, {
+      [field]: {
+        rich_text: [{ type: 'text', text: { content: formattedValue } }]
+      }
+    });
+    setTimeout(() => fetchAllData(), 500);
   } catch (error) {
     console.error('시간 업데이트 실패:', error);
-    completeLoading(`${taskTitle} ${fieldName} 수정 실패`);
     // 실패시 롤백
     if (originalValue) {
       task.properties[field].rich_text = [{ type: 'text', text: { content: originalValue }, plain_text: originalValue }];
     } else {
       task.properties[field].rich_text = [];
     }
-    scheduleRenderData();
+    renderData();
+    loading.textContent = '';
   }
 };
 
@@ -1402,7 +1024,6 @@ window.updateDate = async function(taskId, newDate) {
   renderData();
 
   // 백그라운드에서 API 호출
-  pendingUpdates++;
   try {
     const properties = {
       '범위': {
@@ -1454,18 +1075,13 @@ window.updateDate = async function(taskId, newDate) {
 
     if (!response.ok) throw new Error('복제 실패');
 
-    await fetchAllData();
+    setTimeout(() => fetchAllData(), 500);
   } catch (error) {
     console.error('날짜 변경 실패:', error);
     // 실패시 임시 항목 제거
     currentData.results = currentData.results.filter(t => t.id !== tempId);
     renderData();
     loading.textContent = '';
-  } finally {
-    pendingUpdates--;
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
   }
 };
 
@@ -1481,12 +1097,12 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
   const originalTime = task.properties?.['목표 시간']?.number;
   if (originalTime === timeValue) return;
 
-  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
+  const loading = document.getElementById('loading');
+  loading.textContent = '⏳';
 
-  // UI 업데이트
+  // UI 즉시 업데이트
   task.properties['목표 시간'].number = timeValue;
-
-  startLoading(`${taskTitle} 목표 시간 수정`);
+  renderData();
 
   // 백그라운드에서 API 호출
   try {
@@ -1494,14 +1110,14 @@ window.updateTargetTimeInTask = async function(taskId, newTime) {
       '목표 시간': { number: timeValue }
     });
 
-    completeLoading(`${taskTitle} 목표 시간 수정`);
-    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
+    await fetchAllData();
   } catch (error) {
     console.error('목표 시간 업데이트 실패:', error);
-    completeLoading(`${taskTitle} 목표 시간 수정 실패`);
     // 실패시 롤백
     task.properties['목표 시간'].number = originalTime;
-    scheduleRenderData();
+    renderData();
+  } finally {
+    loading.textContent = '';
   }
 };
 
@@ -1551,7 +1167,6 @@ window.updateDateInTask = async function(taskId, newDate) {
   renderData();
 
   // 백그라운드에서 API 호출
-  pendingUpdates++;
   try {
     const properties = {
       '범위': {
@@ -1603,47 +1218,41 @@ window.updateDateInTask = async function(taskId, newDate) {
 
     if (!response.ok) throw new Error('복제 실패');
 
-    await fetchAllData();
+    setTimeout(() => fetchAllData(), 500);
   } catch (error) {
     console.error('날짜 변경 실패:', error);
     // 실패시 임시 항목 제거
     currentData.results = currentData.results.filter(t => t.id !== tempId);
     renderData();
     loading.textContent = '';
-  } finally {
-    pendingUpdates--;
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
   }
 };
 
 window.updateRating = async function(taskId, value) {
+  const loading = document.getElementById('loading');
+  loading.textContent = '⏳';
+
   // 백업
   const task = currentData.results.find(t => t.id === taskId);
   if (!task) return;
   const originalRating = task.properties['(੭•̀ᴗ•̀)੭']?.select?.name || null;
 
-  const taskTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '항목';
-
-  // UI 업데이트
+  // UI 즉시 업데이트
   task.properties['(੭•̀ᴗ•̀)੭'] = value ? { select: { name: value } } : { select: null };
-
-  startLoading(`${taskTitle} 집중도 수정`);
+  renderData();
 
   // 백그라운드에서 API 호출
   try {
     await updateNotionPage(taskId, {
       '(੭•̀ᴗ•̀)੭': value ? { select: { name: value } } : { select: null }
     });
-    completeLoading(`${taskTitle} 집중도 수정`);
-    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
+    setTimeout(() => fetchAllData(), 500);
   } catch (error) {
     console.error('집중도 업데이트 실패:', error);
-    completeLoading(`${taskTitle} 집중도 수정 실패`);
     // 실패시 롤백
     task.properties['(੭•̀ᴗ•̀)੭'] = originalRating ? { select: { name: originalRating } } : { select: null };
-    scheduleRenderData();
+    renderData();
+    loading.textContent = '';
   }
 };
 
@@ -1674,21 +1283,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(fetchAllData, 300000);
 
   setInterval(() => {
-    // keepalive
+    console.log('keepalive');
   }, 60000);
 });
 
 function setupEventListeners() {
-  // 로딩 인디케이터 초기화
-  const loading = document.getElementById('loading');
-  const tooltip = document.getElementById('loading-tooltip');
-  if (loading) {
-    loading.title = '작업 로그';
-  }
-  if (tooltip) {
-    tooltip.textContent = '작업 로그가 없습니다';
-  }
-
   const viewToggle = document.getElementById('view-toggle');
   viewToggle.addEventListener('click', () => {
     if (calendarViewMode) {
@@ -1703,26 +1302,11 @@ function setupEventListeners() {
       renderData();
     }
   });
-
-  // 키보드 단축키: Ctrl+Z (undo), Ctrl+Shift+Z (redo)
-  document.addEventListener('keydown', (e) => {
-    // 입력 필드에서는 단축키 무시
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
-      return;
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Z') {
-      e.preventDefault();
-      redo();
-    } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-      e.preventDefault();
-      undo();
-    }
-  });
 }
 
 async function fetchData(retryCount = 0) {
-  startLoading('플래너 데이터 로드');
+  const loading = document.getElementById('loading');
+  loading.textContent = '⏳';
 
   try {
     // 오늘 기준 앞뒤 날짜 계산 (빠른 초기 로드용)
@@ -1779,7 +1363,6 @@ async function fetchData(retryCount = 0) {
     // 렌더링
     renderData();
     updateLastUpdateTime();
-    completeLoading('플래너 데이터 로드');
   } catch (error) {
     console.error('Error:', error);
 
@@ -1800,6 +1383,7 @@ async function fetchData(retryCount = 0) {
     // Retry logic for network errors
     if (error.message.includes('Failed to fetch') && retryCount < 3) {
       const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff: 1s, 2s, 4s
+      console.log(`Retrying in ${delay}ms... (attempt ${retryCount + 1}/3)`);
       document.getElementById('content').innerHTML =
         `<div class="empty-message">⚠️ 연결 중... (${retryCount + 1}/3)<br><br>${errorMessage}</div>`;
       setTimeout(() => fetchData(retryCount + 1), delay);
@@ -1808,19 +1392,13 @@ async function fetchData(retryCount = 0) {
 
     document.getElementById('content').innerHTML =
       `<div class="empty-message" style="white-space: pre-line;">❌ 오류\n\n${errorMessage}</div>`;
-    completeLoading('플래너 데이터 로드 실패');
+  } finally {
+    loading.textContent = '';
   }
 }
 
 async function fetchAllData() {
-  // 진행 중인 업데이트가 있으면 나중에 다시 시도
-  if (pendingUpdates > 0) {
-    needsRefresh = true;
-    return;
-  }
-
   try {
-    needsRefresh = false;
     const notionUrl = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
     const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
@@ -1844,12 +1422,9 @@ async function fetchAllData() {
     // 책 이름 불러오기
     await fetchBookNames();
 
-    // 재렌더링 - 현재 뷰 모드에 맞게 렌더링
-    if (calendarViewMode) {
-      renderCalendarView();
-    } else {
-      renderData();
-    }
+    // 재렌더링
+    renderData();
+    console.log('전체 데이터 로드 완료:', currentData.results.length, '개 항목');
   } catch (error) {
     console.error('전체 데이터 로드 실패:', error);
   }
@@ -1864,6 +1439,13 @@ async function fetchBookNames() {
     bookRelations.forEach(rel => bookIds.add(rel.id));
   });
 
+  // calendar 데이터베이스의 책 ID 수집
+  if (calendarData && calendarData.results) {
+    calendarData.results.forEach(task => {
+      const bookRelations = task.properties?.['책']?.relation || [];
+      bookRelations.forEach(rel => bookIds.add(rel.id));
+    });
+  }
 
   // 모든 책 데이터를 병렬로 가져오기
   const fetchPromises = Array.from(bookIds)
@@ -1964,22 +1546,14 @@ function updateDDayButton() {
 }
 
 function renderTimelineView() {
-  const targetDateStr = formatDateToLocalString(currentDate);
+  const targetDateStr = currentDate.toISOString().split('T')[0];
 
   const dayTasks = currentData.results.filter(item => {
     const dateStart = item.properties?.['날짜']?.date?.start;
     return dateStart && dateStart === targetDateStr;
   });
 
-  // 오늘 날짜 구하기
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayStr = formatDateToLocalString(today);
-
-  // 오늘 또는 미래 날짜인 경우에만 완료/미완료 분리
-  const isPastDate = targetDateStr < todayStr;
-
-  // 완료/미완료 분리 (버튼 표시용)
+  // 완료 안 한 일 먼저, 그 다음 완료한 일
   const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
   const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
 
@@ -1988,27 +1562,13 @@ function renderTimelineView() {
       const aStart = a.properties?.['시작']?.rich_text?.[0]?.plain_text || '';
       const bStart = b.properties?.['시작']?.rich_text?.[0]?.plain_text || '';
 
-      if (aStart && bStart) {
-        // 06:00를 하루의 시작으로 간주 (00:00~05:59는 뒤로 보냄)
-        const adjustTime = (timeStr) => {
-          const hour = parseInt(timeStr.split(':')[0]);
-          if (hour < 6) {
-            // 00:00~05:59 → 24:00~29:59로 변환
-            return String(hour + 24).padStart(2, '0') + timeStr.substring(2);
-          }
-          return timeStr;
-        };
-
-        const aAdjusted = adjustTime(aStart);
-        const bAdjusted = adjustTime(bStart);
-        return aAdjusted.localeCompare(bAdjusted);
-      }
+      if (aStart && bStart) return aStart.localeCompare(bStart);
       if (aStart) return -1;
       if (bStart) return 1;
 
-      const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th'];
-      const aPriority = a.properties?.['우선순위']?.select?.name || '20th';
-      const bPriority = b.properties?.['우선순위']?.select?.name || '20th';
+      const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
+      const aPriority = a.properties?.['우선순위']?.select?.name || '10th';
+      const bPriority = b.properties?.['우선순위']?.select?.name || '10th';
       const priorityCompare = priorityOrder.indexOf(aPriority) - priorityOrder.indexOf(bPriority);
 
       if (priorityCompare !== 0) return priorityCompare;
@@ -2019,14 +1579,7 @@ function renderTimelineView() {
     });
   };
 
-  let sortedTasks;
-  if (isPastDate) {
-    // 과거 날짜: 완료/미완료 구분 없이 그냥 정렬
-    sortedTasks = sortTasks(dayTasks);
-  } else {
-    // 오늘/미래: 완료 안 한 일 먼저, 그 다음 완료한 일
-    sortedTasks = [...sortTasks(incompleteTasks), ...sortTasks(completedTasks)];
-  }
+  const sortedTasks = [...sortTasks(incompleteTasks), ...sortTasks(completedTasks)];
 
   // 완료 개수 계산
   const completedCount = sortedTasks.filter(t => t.properties?.['완료']?.checkbox).length;
@@ -2078,14 +1631,8 @@ function renderTimelineView() {
       <h3 class="section-title" style="margin: 0; cursor: pointer;" onclick="goToday()">${dateLabel} (${completedCount}개/${totalCount}개)</h3>
       <button onclick="changeDate(1)" style="font-size: 16px; padding: 4px 12px; color: #999;">▶</button>
     </div>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-      <div style="flex: 1;"></div>
-      <div style="font-size: 11px; color: #86868b; text-align: center;">
-        목표 ${formatMinutesToTime(totalTarget)} / 실제 ${formatMinutesToTime(totalActual)} <span style="color: ${totalDiff > 0 ? '#FF3B30' : totalDiff < 0 ? '#34C759' : '#666'};">(${diffSign}${formatMinutesToTime(diffAbs)})</span>
-      </div>
-      <div style="flex: 1; display: flex; justify-content: flex-end;">
-        ${incompleteTasks.length > 0 ? `<button onclick="duplicateAllIncompleteTasks()" style="font-size: 16px; padding: 4px 8px; background: none; border: none; cursor: pointer; color: #999;">→</button>` : ''}
-      </div>
+    <div style="font-size: 11px; color: #86868b; margin-bottom: 12px; text-align: center;">
+      목표 ${formatMinutesToTime(totalTarget)} / 실제 ${formatMinutesToTime(totalActual)} <span style="color: ${totalDiff > 0 ? '#FF3B30' : totalDiff < 0 ? '#34C759' : '#666'};">(${diffSign}${formatMinutesToTime(diffAbs)})</span>
     </div>
     <div class="task-list">
   `;
@@ -2130,7 +1677,7 @@ function renderTimelineView() {
       html += `
         <div class="task-item ${completed ? 'completed' : ''}">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-            <div class="task-title ${completed ? 'completed' : ''}" style="flex: 1; cursor: pointer;" onclick="editTaskReturnView='planner'; editTask('${task.id}')">${title}</div>
+            <div class="task-title ${completed ? 'completed' : ''}" style="flex: 1; cursor: pointer;" onclick="editTask('${task.id}')">${title}</div>
             <div class="checkbox ${completed ? 'checked' : ''}" onclick="toggleComplete('${task.id}', ${!completed})" 
               style="margin-left: 12px; flex-shrink: 0;">
               ${completed ? '✓' : ''}
@@ -2190,7 +1737,7 @@ function renderTimelineView() {
 }
 
 function renderTaskView() {
-  const targetDateStr = formatDateToLocalString(currentDate);
+  const targetDateStr = currentDate.toISOString().split('T')[0];
 
   // 날짜 필터
   const dayTasks = currentData.results.filter(item => {
@@ -2198,15 +1745,11 @@ function renderTaskView() {
     return dateStart && dateStart === targetDateStr;
   });
 
-  // 오늘 날짜 구하기
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayStr = formatDateToLocalString(today);
+  // 완료 안 한 일 먼저
+  const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
+  const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
 
-  // 오늘 또는 미래 날짜인 경우에만 완료/미완료 분리
-  const isPastDate = targetDateStr < todayStr;
-
-  const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th'];
+  const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
 
   const sortByPriority = (tasks) => {
     return tasks.sort((a, b) => {
@@ -2216,16 +1759,7 @@ function renderTaskView() {
     });
   };
 
-  let allTasks;
-  if (isPastDate) {
-    // 과거 날짜: 완료/미완료 구분 없이 그냥 정렬
-    allTasks = sortByPriority(dayTasks);
-  } else {
-    // 오늘/미래: 완료 안 한 일 먼저
-    const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
-    const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
-    allTasks = [...sortByPriority(incompleteTasks), ...sortByPriority(completedTasks)];
-  }
+  const allTasks = [...sortByPriority(incompleteTasks), ...sortByPriority(completedTasks)];
 
   // 시간 통계 계산
   let totalTarget = 0;
@@ -2291,7 +1825,7 @@ function renderTaskView() {
         <div class="drag-handle" style="position: absolute; left: 0; top: 0; bottom: 0; width: 40px; cursor: move; opacity: 0; user-select: none; -webkit-user-select: none; touch-action: none;"></div>
         <div class="task-header" style="flex: 1;">
           <div class="task-content" style="flex: 1;">
-            <div class="task-title ${completed ? 'completed' : ''}" style="cursor: pointer;" onclick="editTaskReturnView='planner'; editTask('${task.id}')">${title}</div>
+            <div class="task-title ${completed ? 'completed' : ''}" style="cursor: pointer;" onclick="editTask('${task.id}')">${title}</div>
             <div style="font-size: 11px; color: #86868b; margin-top: 6px; display: flex; gap: 8px; align-items: center;">
               ${priority ? `<span style="background: #999; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px;">${priority}</span>` : ''}
               <span style="display: flex; align-items: center; gap: 4px;">
@@ -2354,6 +1888,7 @@ function initSortable() {
 
       if (dragStartIndex !== dragEndIndex) {
         await updateTaskOrder();
+        setTimeout(() => fetchAllData(), 500);
       }
     });
 
@@ -2394,6 +1929,7 @@ function initSortable() {
 
         if (dragStartIndex !== dragEndIndex) {
           await updateTaskOrder();
+          setTimeout(() => fetchAllData(), 500);
         }
 
         draggedItem = null;
@@ -2431,6 +1967,7 @@ function initSortable() {
 
       if (dragStartIndex !== dragEndIndex) {
         await updateTaskOrder();
+        setTimeout(() => fetchAllData(), 500);
       }
 
       draggedItem = null;
@@ -2466,7 +2003,7 @@ function getDragAfterElement(container, y) {
 async function updateTaskOrder() {
   const container = document.getElementById('task-sortable');
   const items = container.querySelectorAll('.task-item');
-  const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th'];
+  const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
   
   const loading = document.getElementById('loading');
   loading.textContent = '⏳';
@@ -2484,38 +2021,28 @@ async function updateTaskOrder() {
   }
   
   await Promise.all(updates);
-
-  // 즉시 UI 업데이트 (호출하는 곳에서 scheduleRefresh를 호출하므로 여기서는 렌더링만)
-  // fetchAllData 하지 않음 - UI는 이미 업데이트됨
+  
+  setTimeout(() => fetchAllData(), 1000);
 }
 
 async function updateNotionPage(pageId, properties) {
-  pendingUpdates++;
-  try {
-    const notionUrl = `https://api.notion.com/v1/pages/${pageId}`;
-    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${NOTION_API_KEY}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ properties })
-    });
+  const notionUrl = `https://api.notion.com/v1/pages/${pageId}`;
+  const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Bearer ${NOTION_API_KEY}`,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ properties })
+  });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || `Update failed: ${response.status}`);
-    }
-
-    return await response.json();
-  } finally {
-    pendingUpdates--;
-    // 모든 업데이트가 완료되고 refresh가 필요하면 실행
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || `Update failed: ${response.status}`);
   }
+
+  return await response.json();
 }
 
 function formatDateLabel(dateString) {
@@ -2570,228 +2097,6 @@ function updateLastUpdateTime() {
     now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 }
 
-// 프리플랜과 플래너 항목들을 연결하는 헬퍼 함수 (UI 없이)
-async function linkPrePlanToPlannerSilent() {
-  if (!currentData) {
-    return 0;
-  }
-
-  let linkCount = 0;
-
-  // 프리플랜 항목들을 순회
-  for (const prePlanItem of currentData.results) {
-    const prePlanTitle = getCalendarItemTitle(prePlanItem);
-    const prePlanBookId = prePlanItem.properties?.['책']?.relation?.[0]?.id;
-
-    // 책이 없으면 스킵
-    if (!prePlanBookId) {
-      continue;
-    }
-
-    // 같은 책을 가진 플래너 항목들 중에서 제목이 같은 항목 찾기
-    const matchingPlannerItem = currentData.results.find(plannerItem => {
-      const plannerScope = plannerItem.properties?.['범위']?.title?.[0]?.plain_text || '제목 없음';
-      const plannerBookId = plannerItem.properties?.['책']?.relation?.[0]?.id;
-      return plannerScope === prePlanTitle && plannerBookId === prePlanBookId;
-    });
-
-    if (matchingPlannerItem) {
-      // 이미 연결되어 있는지 확인
-      const existingPlannerRelation = prePlanItem.properties?.['PLANNER']?.relation || [];
-      const alreadyLinked = existingPlannerRelation.some(rel => rel.id === matchingPlannerItem.id);
-
-      // 이미 연결되어 있으면 스킵
-      if (alreadyLinked) {
-        continue;
-      }
-
-      // 프리플랜의 PLANNER 속성에 플래너 항목 연결
-      pendingUpdates++;
-      try {
-        const prePlanUpdateUrl = `https://api.notion.com/v1/pages/${prePlanItem.id}`;
-        await fetch(`${CORS_PROXY}${encodeURIComponent(prePlanUpdateUrl)}`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${NOTION_API_KEY}`,
-            'Notion-Version': '2022-06-28',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            properties: {
-              'PLANNER': {
-                relation: [{ id: matchingPlannerItem.id }]
-              }
-            }
-          })
-        });
-      } finally {
-        pendingUpdates--;
-      }
-
-      // 플래너의 PRE-PLAN 속성에 프리플랜 항목 연결 (속성이 없을 수 있으므로 에러 무시)
-      pendingUpdates++;
-      try {
-        const plannerUpdateUrl = `https://api.notion.com/v1/pages/${matchingPlannerItem.id}`;
-        await fetch(`${CORS_PROXY}${encodeURIComponent(plannerUpdateUrl)}`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${NOTION_API_KEY}`,
-            'Notion-Version': '2022-06-28',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            properties: {
-              'PRE-PLAN': {
-                relation: [{ id: prePlanItem.id }]
-              }
-            }
-          })
-        });
-      } catch (e) {
-        // PRE-PLAN 속성이 없는 경우 무시
-      } finally {
-        pendingUpdates--;
-      }
-
-      linkCount++;
-    }
-  }
-
-  return linkCount;
-}
-
-window.linkPrePlanToPlanner = async function() {
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
-
-  try {
-    if (!currentData) {
-      alert('데이터가 로드되지 않았습니다.');
-      loading.textContent = '';
-      return;
-    }
-
-    const linkCount = await linkPrePlanToPlannerSilent();
-    alert(`${linkCount}개 항목 연결 완료`);
-
-    // 데이터 새로고침
-    await fetchAllData();
-    renderCalendarView();
-  } catch (error) {
-    alert(`연결 실패: ${error.message}`);
-  } finally {
-    loading.textContent = '';
-  }
-};
-
-window.duplicateAllIncompleteTasks = async function() {
-  try {
-    const targetDateStr = formatDateToLocalString(currentDate);
-
-    // 완료되지 않은 할일만 필터
-    const incompleteTasks = currentData.results.filter(item => {
-      const dateStart = item.properties?.['날짜']?.date?.start;
-      const completed = item.properties?.['완료']?.checkbox;
-      return dateStart === targetDateStr && !completed;
-    });
-
-    if (incompleteTasks.length === 0) {
-      return;
-    }
-
-    // 모든 할일을 복제 (원본 완료 처리 없이)
-    for (const task of incompleteTasks) {
-      const originalTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '';
-
-      startLoading(`${originalTitle} 날짜 복제`);
-
-      // ' 붙이기
-      const newTitle = originalTitle + "'";
-
-      const bookRelation = task.properties?.['책']?.relation?.[0];
-      const targetTime = task.properties?.['목표 시간']?.number;
-      const dateStart = task.properties?.['날짜']?.date?.start;
-      const plannerRelation = task.properties?.['PLANNER']?.relation;
-
-      // 다음날로 날짜 설정
-      let nextDayStr = dateStart;
-      if (dateStart) {
-        const currentTaskDate = new Date(dateStart);
-        currentTaskDate.setDate(currentTaskDate.getDate() + 1);
-        nextDayStr = formatDateToLocalString(currentTaskDate);
-      }
-
-      const properties = {
-        '범위': {
-          title: [{ text: { content: newTitle } }]
-        },
-        '완료': { checkbox: false }
-      };
-
-      if (bookRelation) {
-        properties['책'] = { relation: [{ id: bookRelation.id }] };
-      }
-
-      if (targetTime) {
-        properties['목표 시간'] = { number: targetTime };
-      }
-
-      if (nextDayStr) {
-        properties['날짜'] = { date: { start: nextDayStr } };
-      }
-
-      // 우선순위 복사
-      const priority = task.properties?.['우선순위']?.select?.name;
-      if (priority) {
-        properties['우선순위'] = { select: { name: priority } };
-      }
-
-      // PLANNER 관계형 복사
-      if (plannerRelation && plannerRelation.length > 0) {
-        properties['PLANNER'] = { relation: plannerRelation.map(r => ({ id: r.id })) };
-      }
-
-      // 복제 생성
-      pendingUpdates++;
-      try {
-        const notionUrl = 'https://api.notion.com/v1/pages';
-        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${NOTION_API_KEY}`,
-            'Notion-Version': '2022-06-28',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            parent: { database_id: DATABASE_ID },
-            properties: properties
-          })
-        });
-
-        if (response.ok) {
-          completeLoading(`${originalTitle} 날짜 복제`);
-        } else {
-          completeLoading(`${originalTitle} 날짜 복제 실패`);
-        }
-      } catch (error) {
-        console.error('복제 실패:', error);
-        completeLoading(`${originalTitle} 날짜 복제 실패`);
-      } finally {
-        pendingUpdates--;
-      }
-    }
-
-    // 즉시 UI 업데이트
-    await fetchAllData();
-  } catch (error) {
-    console.error('전체 복제 실패:', error);
-  } finally {
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
-  }
-};
-
 async function fetchCalendarData(silent = false) {
   const loading = document.getElementById('loading');
   if (!silent) {
@@ -2799,7 +2104,7 @@ async function fetchCalendarData(silent = false) {
   }
 
   try {
-    const notionUrl = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
+    const notionUrl = `https://api.notion.com/v1/databases/${CALENDAR_DB_ID}/query`;
     const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
       headers: {
@@ -2887,23 +2192,9 @@ async function fetchDDayData() {
 }
 
 window.updateCalendarItemDate = async function(itemId, newDate) {
-  const item = currentData.results.find(t => t.id === itemId);
+  const item = calendarData.results.find(t => t.id === itemId);
   if (item && item.properties?.['날짜']) {
-    const oldDate = item.properties['날짜'].date?.start;
-
-    const itemTitle = item.properties?.['범위']?.title?.[0]?.plain_text || '항목';
-
-    // 히스토리에 추가
-    addToHistory({
-      type: 'UPDATE',
-      itemId: itemId,
-      before: { '날짜': { date: { start: oldDate } } },
-      after: { '날짜': { date: { start: newDate } } }
-    });
-
     item.properties['날짜'].date = { start: newDate };
-
-    startLoading(`${itemTitle} 날짜 변경`);
 
     // 노션에 실제로 날짜 업데이트
     try {
@@ -2925,48 +2216,20 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
       if (!response.ok) {
         throw new Error('날짜 업데이트 실패');
       }
-
-      completeLoading(`${itemTitle} 날짜 변경`);
-
-      // UI 업데이트
-      // fetchAllData 하지 않음 - UI는 이미 업데이트됨
-      if (calendarViewMode) {
-        renderCalendarView();
-      }
     } catch (error) {
       console.error('Error updating date:', error);
-      completeLoading(`${itemTitle} 날짜 변경 실패`);
     }
   }
 };
 
 window.loadPrevCalendar = function() {
-  const content = document.getElementById('content');
-  const oldScrollHeight = content.scrollHeight;
-  const oldScrollTop = content.scrollTop;
-
   calendarStartDate.setDate(calendarStartDate.getDate() - 14);
   renderCalendarView();
-
-  // 새로 추가된 콘텐츠 높이만큼 스크롤 조정
-  requestAnimationFrame(() => {
-    const newScrollHeight = content.scrollHeight;
-    const heightDiff = newScrollHeight - oldScrollHeight;
-    content.scrollTop = oldScrollTop + heightDiff;
-  });
 };
 
 window.loadNextCalendar = function() {
-  const content = document.getElementById('content');
-  const oldScrollTop = content.scrollTop;
-
   calendarEndDate.setDate(calendarEndDate.getDate() + 14);
   renderCalendarView();
-
-  // 스크롤 위치 유지
-  requestAnimationFrame(() => {
-    content.scrollTop = oldScrollTop;
-  });
 };
 
 window.saveToPlanner = async function(dateStr) {
@@ -2974,7 +2237,7 @@ window.saveToPlanner = async function(dateStr) {
   loading.textContent = '⏳';
 
   try {
-    const itemsOnDate = currentData.results.filter(item => {
+    const itemsOnDate = calendarData.results.filter(item => {
       const itemDate = item.properties?.['날짜']?.date?.start;
       return itemDate === dateStr;
     });
@@ -2994,6 +2257,7 @@ window.saveToPlanner = async function(dateStr) {
       });
 
       if (isDuplicate) {
+        console.log('중복 항목 건너뛰기:', title, dateStr);
         skippedCount++;
         continue;
       }
@@ -3012,41 +2276,33 @@ window.saveToPlanner = async function(dateStr) {
         properties['책'] = { relation: [{ id: bookRelation.id }] };
       }
 
-      pendingUpdates++;
-      try {
-        const notionUrl = 'https://api.notion.com/v1/pages';
-        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${NOTION_API_KEY}`,
-            'Notion-Version': '2022-06-28',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            parent: { database_id: DATABASE_ID },
-            properties: properties
-          })
-        });
+      const notionUrl = 'https://api.notion.com/v1/pages';
+      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${NOTION_API_KEY}`,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          parent: { database_id: DATABASE_ID },
+          properties: properties
+        })
+      });
 
-        if (!response.ok) {
-          throw new Error('플래너에 저장 실패');
-        }
-        addedCount++;
-      } finally {
-        pendingUpdates--;
+      if (!response.ok) {
+        throw new Error('플래너에 저장 실패');
       }
+      addedCount++;
     }
+
+    console.log(`저장 완료: ${addedCount}개 추가, ${skippedCount}개 건너뜀`);
 
     // alert 없이 바로 새로고침
     await fetchAllData();
-    // 프리플랜-플래너 자동 연결
-    await linkPrePlanToPlannerSilent();
   } catch (error) {
     console.error('Save error:', error);
   } finally {
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
     loading.textContent = '';
   }
 };
@@ -3060,7 +2316,7 @@ window.saveAllToPlanner = async function() {
     let totalSkipped = 0;
 
     // 프리플랜의 모든 항목 순회
-    for (const item of currentData.results) {
+    for (const item of calendarData.results) {
       const title = getCalendarItemTitle(item);
       const dateStart = item.properties?.['날짜']?.date?.start;
       const bookRelation = item.properties?.['책']?.relation?.[0];
@@ -3075,6 +2331,7 @@ window.saveAllToPlanner = async function() {
       });
 
       if (isDuplicate) {
+        console.log('중복 항목 건너뛰기:', title, dateStart);
         totalSkipped++;
         continue;
       }
@@ -3093,48 +2350,43 @@ window.saveAllToPlanner = async function() {
         properties['책'] = { relation: [{ id: bookRelation.id }] };
       }
 
-      pendingUpdates++;
-      try {
-        const notionUrl = 'https://api.notion.com/v1/pages';
-        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${NOTION_API_KEY}`,
-            'Notion-Version': '2022-06-28',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            parent: { database_id: DATABASE_ID },
-            properties: properties
-          })
-        });
+      const notionUrl = 'https://api.notion.com/v1/pages';
+      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${NOTION_API_KEY}`,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          parent: { database_id: DATABASE_ID },
+          properties: properties
+        })
+      });
 
-        if (!response.ok) {
-          console.error('플래너 저장 실패:', title);
-          continue;
-        }
-        totalAdded++;
-      } finally {
-        pendingUpdates--;
+      if (!response.ok) {
+        console.error('플래너 저장 실패:', title);
+        continue;
       }
+      totalAdded++;
     }
+
+    console.log(`전체 저장 완료: ${totalAdded}개 추가, ${totalSkipped}개 건너뜀`);
 
     // alert 없이 바로 새로고침
     await fetchAllData();
-    // 프리플랜-플래너 자동 연결
-    await linkPrePlanToPlannerSilent();
   } catch (error) {
     console.error('Save all error:', error);
   } finally {
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
     loading.textContent = '';
   }
 };
 
 window.undoCalendarSync = async function() {
+  console.log('되돌리기 시도, 항목 수:', lastSyncedItems.length);
+
   if (lastSyncedItems.length === 0) {
+    console.log('되돌릴 동기화 내역이 없습니다');
     return;
   }
 
@@ -3145,41 +2397,37 @@ window.undoCalendarSync = async function() {
     // 마지막 동기화로 생성된 항목들을 삭제
     let deletedCount = 0;
     for (const itemId of lastSyncedItems) {
-      pendingUpdates++;
-      try {
-        const notionUrl = `https://api.notion.com/v1/pages/${itemId}`;
-        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${NOTION_API_KEY}`,
-            'Notion-Version': '2022-06-28',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            archived: true
-          })
-        });
+      console.log('삭제 시도:', itemId);
+      const notionUrl = `https://api.notion.com/v1/pages/${itemId}`;
+      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${NOTION_API_KEY}`,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          archived: true
+        })
+      });
 
-        if (response.ok) {
-          deletedCount++;
-        } else {
-          console.error('삭제 실패:', itemId, response.status);
-        }
-      } finally {
-        pendingUpdates--;
+      if (response.ok) {
+        deletedCount++;
+        console.log('삭제 성공:', itemId);
+      } else {
+        console.error('삭제 실패:', itemId, response.status);
       }
     }
 
+    console.log('총 삭제됨:', deletedCount);
+
     // 되돌리기 후 초기화
     lastSyncedItems = [];
-    await fetchAllData();
+    await fetchCalendarData();
     renderCalendarView();
   } catch (error) {
     console.error('Undo error:', error);
   } finally {
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
     loading.textContent = '';
   }
 };
@@ -3239,7 +2487,7 @@ window.syncPlannerToCalendar = async function() {
 
     // 프리플랜에 이미 있는 항목 맵 (제목+책 → 항목)
     const existingCalendarItemsMap = new Map();
-    currentData.results.forEach(item => {
+    calendarData.results.forEach(item => {
       const title = getCalendarItemTitle(item);
       const bookId = item.properties?.['책']?.relation?.[0]?.id || 'no-book';
       const key = `${bookId}:${title}`;
@@ -3264,28 +2512,23 @@ window.syncPlannerToCalendar = async function() {
         const existingDate = existingItem.properties?.['날짜']?.date?.start;
         if (existingDate !== dateStart) {
           // 날짜가 다르면 업데이트
-          pendingUpdates++;
-          try {
-            const notionUrl = `https://api.notion.com/v1/pages/${existingItem.id}`;
-            const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-              method: 'PATCH',
-              headers: {
-                'Authorization': `Bearer ${NOTION_API_KEY}`,
-                'Notion-Version': '2022-06-28',
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                properties: {
-                  '날짜': { date: { start: dateStart } }
-                }
-              })
-            });
+          const notionUrl = `https://api.notion.com/v1/pages/${existingItem.id}`;
+          const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${NOTION_API_KEY}`,
+              'Notion-Version': '2022-06-28',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              properties: {
+                '날짜': { date: { start: dateStart } }
+              }
+            })
+          });
 
-            if (response.ok) {
-              updateCount++;
-            }
-          } finally {
-            pendingUpdates--;
+          if (response.ok) {
+            updateCount++;
           }
         }
         continue; // 이미 있으면 새로 생성은 하지 않음
@@ -3300,7 +2543,7 @@ window.syncPlannerToCalendar = async function() {
 
       // pre-plan 속성이 title 타입인지 확인 후 사용
       // 일단 기본 title 속성으로 시도
-      for (const [key, value] of Object.entries(currentData.results[0]?.properties || {})) {
+      for (const [key, value] of Object.entries(calendarData.results[0]?.properties || {})) {
         if (value.type === 'title') {
           properties[key] = {
             title: [{ text: { content: title } }]
@@ -3313,44 +2556,37 @@ window.syncPlannerToCalendar = async function() {
         properties['책'] = { relation: [{ id: bookRelation.id }] };
       }
 
-      pendingUpdates++;
-      try {
-        const notionUrl = 'https://api.notion.com/v1/pages';
-        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${NOTION_API_KEY}`,
-            'Notion-Version': '2022-06-28',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            parent: { database_id: CALENDAR_DB_ID },
-            properties: properties
-          })
-        });
+      const notionUrl = 'https://api.notion.com/v1/pages';
+      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${NOTION_API_KEY}`,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          parent: { database_id: CALENDAR_DB_ID },
+          properties: properties
+        })
+      });
 
-        if (response.ok) {
-          const result = await response.json();
-          // 새로 생성된 항목 ID 저장
-          lastSyncedItems.push(result.id);
-          syncCount++;
-        }
-      } finally {
-        pendingUpdates--;
+      if (response.ok) {
+        const result = await response.json();
+        // 새로 생성된 항목 ID 저장
+        lastSyncedItems.push(result.id);
+        console.log('동기화 항목 추가:', result.id);
+        syncCount++;
       }
     }
 
+    console.log('동기화 완료. 새 항목 수:', lastSyncedItems.length);
+
     // alert 없이 바로 새로고침
-    await fetchAllData();
-    // 프리플랜-플래너 자동 연결
-    await linkPrePlanToPlannerSilent();
+    await fetchCalendarData();
     renderCalendarView();
   } catch (error) {
     console.error('Sync error:', error);
   } finally {
-    if (pendingUpdates === 0 && needsRefresh) {
-      setTimeout(() => fetchAllData(), 100);
-    }
     loading.textContent = '';
   }
 };
@@ -3367,11 +2603,11 @@ function renderCalendarView() {
   }
 
   // LIST 모드일 때는 프리플랜 리스트 표시
-  if (!currentData || !currentData.results) return;
+  if (!calendarData || !calendarData.results) return;
 
   // 날짜별로 그룹화
   const groupedByDate = {};
-  currentData.results.forEach(item => {
+  calendarData.results.forEach(item => {
     const dateStart = item.properties?.['날짜']?.date?.start;
     if (dateStart) {
       if (!groupedByDate[dateStart]) {
@@ -3396,6 +2632,10 @@ function renderCalendarView() {
   const today = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;
 
   let html = `
+    <div style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 12px; gap: 4px;">
+      <button onclick="syncPlannerToCalendar()" style="font-size: 14px; padding: 2px; background: none; border: none; cursor: pointer;" title="플래너 동기화">🔄</button>
+      <button onclick="saveAllToPlanner()" style="font-size: 14px; padding: 2px; background: none; border: none; cursor: pointer;" title="프리플랜 → 플래너">💾</button>
+    </div>
     <button onclick="loadPrevCalendar()" style="width: 100%; background: #e5e5e7; color: #333; border: none; border-radius: 4px; padding: 8px; font-size: 11px; cursor: pointer; margin-bottom: 12px;">더보기</button>
   `;
 
@@ -3407,9 +2647,9 @@ function renderCalendarView() {
 
     html += `
       <div style="margin-bottom: 20px;">
-        <div style="display: flex; align-items: center; margin-bottom: 8px; gap: 8px;">
+        <div style="display: flex; align-items: center; margin-bottom: 8px;">
           <h4 style="${dateStyle} cursor: pointer;" onclick="toggleCalendarView('${dateStr}')" title="플래너로 이동">${dateLabel}</h4>
-          <button onclick="addTaskReturnView='list'; addNewTaskForDate('${dateStr}')" style="font-size: 16px; padding: 0; background: none; border: none; cursor: pointer; color: #999;">+</button>
+          ${items.length > 0 ? `<button onclick="saveToPlanner('${dateStr}')" style="font-size: 14px; padding: 2px; background: none; border: none; cursor: pointer; margin-left: 4px;" title="플래너에 저장">→</button>` : ''}
         </div>
         <div class="calendar-date-group" data-date="${dateStr}">
     `;
@@ -3417,39 +2657,16 @@ function renderCalendarView() {
     if (items.length === 0) {
       html += `<div style="font-size: 11px; color: #999; padding: 8px;">일정 없음</div>`;
     } else {
-      // 책이름으로 먼저 정렬, 같은 책 안에서 제목으로 정렬 (숫자는 자연스럽게)
-      const sortedItems = items.sort((a, b) => {
-        const titleA = getCalendarItemTitle(a);
-        const titleB = getCalendarItemTitle(b);
-        const bookRelationA = a.properties?.['책']?.relation?.[0];
-        const bookRelationB = b.properties?.['책']?.relation?.[0];
-        const bookNameA = bookRelationA && bookNames[bookRelationA.id] ? bookNames[bookRelationA.id] : '';
-        const bookNameB = bookRelationB && bookNames[bookRelationB.id] ? bookNames[bookRelationB.id] : '';
-
-        // 1. 먼저 책 이름으로 정렬
-        const bookCompare = bookNameA.localeCompare(bookNameB, 'ko', { numeric: true });
-        if (bookCompare !== 0) return bookCompare;
-
-        // 2. 같은 책이면 제목으로 정렬 (숫자 자연스럽게)
-        return titleA.localeCompare(titleB, 'ko', { numeric: true });
-      });
-
-      sortedItems.forEach(item => {
+      items.forEach(item => {
         const title = getCalendarItemTitle(item);
         const bookRelation = item.properties?.['책']?.relation?.[0];
         const bookName = bookRelation && bookNames[bookRelation.id] ? bookNames[bookRelation.id] : '';
         const displayTitle = bookName ? `[${bookName}] ${title}` : title;
 
-        // 플래너 데이터베이스의 완료 상태 직접 가져오기
-        const completed = item.properties?.['완료']?.checkbox || false;
-
         html += `
-          <div class="calendar-item" data-id="${item.id}" data-date="${dateStr}" style="position: relative; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div class="drag-handle" style="position: absolute; left: 0; top: 0; bottom: 0; width: 80px; cursor: grab; opacity: 0; user-select: none; -webkit-user-select: none; touch-action: none;"></div>
-            <div style="font-size: 12px; color: #333; flex: 1; cursor: pointer;" onclick="editTaskReturnView='list'; editTask('${item.id}')">${displayTitle}</div>
-            <div class="checkbox ${completed ? 'checked' : ''}" style="pointer-events: none; margin-left: 8px;">
-              ${completed ? '✓' : ''}
-            </div>
+          <div class="calendar-item" data-id="${item.id}" data-date="${dateStr}" style="position: relative; padding: 8px 12px;">
+            <div class="drag-handle" style="position: absolute; left: 0; top: 0; bottom: 0; width: 80px; cursor: move; opacity: 0; user-select: none; -webkit-user-select: none; touch-action: none;"></div>
+            <div style="font-size: 12px; color: #333;">${displayTitle}</div>
           </div>
         `;
       });
@@ -3476,63 +2693,6 @@ function initCalendarDragDrop() {
   let draggedItem = null;
   let touchStartY = 0;
   let touchCurrentY = 0;
-  let isMouseDragging = false;
-
-  // 마우스 이벤트는 document 레벨에서 한 번만 등록
-  const handleMouseMove = (e) => {
-    if (!isMouseDragging || !draggedItem) return;
-
-    // 마우스 위치에 있는 그룹 찾기
-    const touchedElement = document.elementFromPoint(e.clientX, e.clientY);
-    const targetGroup = touchedElement?.closest('.calendar-date-group');
-
-    // 모든 그룹 하이라이트 제거
-    groups.forEach(g => g.style.background = 'transparent');
-
-    // 현재 그룹 하이라이트
-    if (targetGroup) {
-      targetGroup.style.background = '#f0f0f0';
-    }
-  };
-
-  const handleMouseUp = (e) => {
-    if (!isMouseDragging) return;
-    isMouseDragging = false;
-
-    if (draggedItem) {
-      draggedItem.style.opacity = '1';
-      draggedItem.style.position = '';
-      draggedItem.style.zIndex = '';
-
-      const handle = draggedItem.querySelector('.drag-handle');
-      if (handle) handle.style.cursor = 'grab';
-
-      // 마우스 종료 위치의 그룹 찾기
-      const touchedElement = document.elementFromPoint(e.clientX, e.clientY);
-      const targetGroup = touchedElement?.closest('.calendar-date-group');
-
-      if (targetGroup && draggedItem) {
-        const newDate = targetGroup.getAttribute('data-date');
-        const itemId = draggedItem.getAttribute('data-id');
-
-        draggedItem.setAttribute('data-date', newDate);
-        targetGroup.appendChild(draggedItem);
-
-        updateCalendarItemDate(itemId, newDate);
-      }
-
-      // 모든 그룹 하이라이트 제거
-      groups.forEach(g => g.style.background = 'transparent');
-
-      draggedItem = null;
-    }
-  };
-
-  // 기존 리스너 제거 후 새로 등록
-  document.removeEventListener('mousemove', handleMouseMove);
-  document.removeEventListener('mouseup', handleMouseUp);
-  document.addEventListener('mousemove', handleMouseMove);
-  document.addEventListener('mouseup', handleMouseUp);
 
   items.forEach(item => {
     const handle = item.querySelector('.drag-handle');
@@ -3551,14 +2711,61 @@ function initCalendarDragDrop() {
     });
 
     // 마우스 드래그 (아이패드 마우스 포함)
+    let isMouseDragging = false;
+
     handle.addEventListener('mousedown', (e) => {
       isMouseDragging = true;
       draggedItem = item;
       item.style.opacity = '0.5';
       item.style.position = 'relative';
       item.style.zIndex = '1000';
-      handle.style.cursor = 'grabbing';
       e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isMouseDragging || !draggedItem) return;
+
+      // 마우스 위치에 있는 그룹 찾기
+      const touchedElement = document.elementFromPoint(e.clientX, e.clientY);
+      const targetGroup = touchedElement?.closest('.calendar-date-group');
+
+      // 모든 그룹 하이라이트 제거
+      groups.forEach(g => g.style.background = 'transparent');
+
+      // 현재 그룹 하이라이트
+      if (targetGroup) {
+        targetGroup.style.background = '#f0f0f0';
+      }
+    });
+
+    document.addEventListener('mouseup', (e) => {
+      if (!isMouseDragging) return;
+      isMouseDragging = false;
+
+      if (draggedItem) {
+        item.style.opacity = '1';
+        item.style.position = '';
+        item.style.zIndex = '';
+
+        // 마우스 종료 위치의 그룹 찾기
+        const touchedElement = document.elementFromPoint(e.clientX, e.clientY);
+        const targetGroup = touchedElement?.closest('.calendar-date-group');
+
+        if (targetGroup && draggedItem) {
+          const newDate = targetGroup.getAttribute('data-date');
+          const itemId = draggedItem.getAttribute('data-id');
+
+          draggedItem.setAttribute('data-date', newDate);
+          targetGroup.appendChild(draggedItem);
+
+          updateCalendarItemDate(itemId, newDate);
+        }
+
+        // 모든 그룹 하이라이트 제거
+        groups.forEach(g => g.style.background = 'transparent');
+
+        draggedItem = null;
+      }
     });
 
     // 모바일 터치 드래그
