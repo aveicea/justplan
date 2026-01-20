@@ -1124,7 +1124,13 @@ window.addNewTask = async function() {
   }, 100);
 };
 
-window.addNewTaskForDate = async function(dateStr) {
+window.addNewTaskForDate = async function(dateStr, fromListView = false) {
+  if (fromListView) {
+    addTaskReturnView = 'list';
+  } else {
+    addTaskReturnView = 'planner';
+  }
+
   const bookList = Object.entries(bookNames).map(([id, name]) =>
     `<option value="${id}">${name}</option>`
   ).join('');
@@ -3537,7 +3543,7 @@ function renderCalendarView() {
       <div style="margin-bottom: 20px;">
         <div style="display: flex; align-items: center; margin-bottom: 8px; gap: 8px;">
           <h4 style="${dateStyle} cursor: pointer;" onclick="toggleCalendarView('${dateStr}')" title="플래너로 이동">${dateLabel}</h4>
-          <button onclick="addTaskReturnView='list'; addNewTaskForDate('${dateStr}')" style="font-size: 16px; padding: 0; background: none; border: none; cursor: pointer; color: #999;">+</button>
+          <button onclick="addNewTaskForDate('${dateStr}', true)" style="font-size: 16px; padding: 0; background: none; border: none; cursor: pointer; color: #999;">+</button>
         </div>
         <div class="calendar-date-group" data-date="${dateStr}">
     `;
