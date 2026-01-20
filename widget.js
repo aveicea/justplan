@@ -27,6 +27,7 @@ let loadingLogs = []; // 로딩 로그 {message: string, status: 'loading'|'comp
 let loadingCount = 0; // 진행중인 작업 수
 let pendingUpdates = 0; // 진행 중인 업데이트 API 수
 let needsRefresh = false; // fetchAllData 필요 여부
+let editTaskReturnView = 'planner'; // editTask 호출 시 돌아갈 뷰 ('planner' | 'list')
 
 // 로딩 로그 관리
 function startLoading(message) {
@@ -795,7 +796,7 @@ window.duplicateTask = async function(taskId) {
 
   const originalTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '';
 
-  startLoading(`${originalTitle} 복제`);
+  startLoading(`${originalTitle} 당일 복제`);
 
   pendingUpdates++;
   try {
@@ -880,10 +881,10 @@ window.duplicateTask = async function(taskId) {
 
     // 즉시 UI 업데이트
     await fetchAllData();
-    completeLoading(`${originalTitle} 복제`);
+    completeLoading(`${originalTitle} 당일 복제`);
   } catch (error) {
     console.error('복제 실패:', error);
-    completeLoading(`${originalTitle} 복제 실패`);
+    completeLoading(`${originalTitle} 당일 복제 실패`);
   } finally {
     pendingUpdates--;
     if (pendingUpdates === 0 && needsRefresh) {
@@ -956,7 +957,11 @@ window.confirmEditTask = async function(taskId) {
   }
 
   // 수정된 데이터로 화면 표시하고 나가기
-  renderData();
+  if (editTaskReturnView === 'list') {
+    renderCalendarView();
+  } else {
+    renderData();
+  }
 
   startLoading(`${title} 수정`);
 
@@ -1074,7 +1079,11 @@ window.deleteTask = async function(taskId) {
 };
 
 window.cancelEdit = function() {
-  renderData();
+  if (editTaskReturnView === 'list') {
+    renderCalendarView();
+  } else {
+    renderData();
+  }
 };
 
 window.addNewTask = async function() {
@@ -2108,7 +2117,7 @@ function renderTimelineView() {
       html += `
         <div class="task-item ${completed ? 'completed' : ''}">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-            <div class="task-title ${completed ? 'completed' : ''}" style="flex: 1; cursor: pointer;" onclick="editTask('${task.id}')" title="클릭: 수정 | +: 당일복제(2) | →: 날짜복제(')">${title}</div>
+            <div class="task-title ${completed ? 'completed' : ''}" style="flex: 1; cursor: pointer;" onclick="editTaskReturnView='planner'; editTask('${task.id}')">${title}</div>
             <div class="checkbox ${completed ? 'checked' : ''}" onclick="toggleComplete('${task.id}', ${!completed})" 
               style="margin-left: 12px; flex-shrink: 0;">
               ${completed ? '✓' : ''}
@@ -2269,7 +2278,7 @@ function renderTaskView() {
         <div class="drag-handle" style="position: absolute; left: 0; top: 0; bottom: 0; width: 40px; cursor: move; opacity: 0; user-select: none; -webkit-user-select: none; touch-action: none;"></div>
         <div class="task-header" style="flex: 1;">
           <div class="task-content" style="flex: 1;">
-            <div class="task-title ${completed ? 'completed' : ''}" style="cursor: pointer;" onclick="editTask('${task.id}')" title="클릭: 수정 | →: 날짜복제(')">${title}</div>
+            <div class="task-title ${completed ? 'completed' : ''}" style="cursor: pointer;" onclick="editTaskReturnView='planner'; editTask('${task.id}')">${title}</div>
             <div style="font-size: 11px; color: #86868b; margin-top: 6px; display: flex; gap: 8px; align-items: center;">
               ${priority ? `<span style="background: #999; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px;">${priority}</span>` : ''}
               <span style="display: flex; align-items: center; gap: 4px;">
@@ -2663,9 +2672,6 @@ window.linkPrePlanToPlanner = async function() {
 };
 
 window.duplicateAllIncompleteTasks = async function() {
-  const loading = document.getElementById('loading');
-  loading.textContent = '⏳';
-
   try {
     const targetDateStr = formatDateToLocalString(currentDate);
 
@@ -2677,13 +2683,14 @@ window.duplicateAllIncompleteTasks = async function() {
     });
 
     if (incompleteTasks.length === 0) {
-      loading.textContent = '';
       return;
     }
 
     // 모든 할일을 복제 (원본 완료 처리 없이)
     for (const task of incompleteTasks) {
       const originalTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '';
+
+      startLoading(`${originalTitle} 날짜 복제`);
 
       // ' 붙이기
       const newTitle = originalTitle + "'";
@@ -2748,7 +2755,14 @@ window.duplicateAllIncompleteTasks = async function() {
           })
         });
 
-        if (!response.ok) continue;
+        if (response.ok) {
+          completeLoading(`${originalTitle} 날짜 복제`);
+        } else {
+          completeLoading(`${originalTitle} 날짜 복제 실패`);
+        }
+      } catch (error) {
+        console.error('복제 실패:', error);
+        completeLoading(`${originalTitle} 날짜 복제 실패`);
       } finally {
         pendingUpdates--;
       }
@@ -2758,7 +2772,6 @@ window.duplicateAllIncompleteTasks = async function() {
     await fetchAllData();
   } catch (error) {
     console.error('전체 복제 실패:', error);
-    loading.textContent = '';
   } finally {
     if (pendingUpdates === 0 && needsRefresh) {
       setTimeout(() => fetchAllData(), 100);
@@ -3381,8 +3394,9 @@ function renderCalendarView() {
 
     html += `
       <div style="margin-bottom: 20px;">
-        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+        <div style="display: flex; align-items: center; margin-bottom: 8px; gap: 8px;">
           <h4 style="${dateStyle} cursor: pointer;" onclick="toggleCalendarView('${dateStr}')" title="플래너로 이동">${dateLabel}</h4>
+          <button onclick="addNewTaskForDate('${dateStr}')" style="font-size: 16px; padding: 0; background: none; border: none; cursor: pointer; color: #999;">+</button>
         </div>
         <div class="calendar-date-group" data-date="${dateStr}">
     `;
@@ -3419,7 +3433,7 @@ function renderCalendarView() {
         html += `
           <div class="calendar-item" data-id="${item.id}" data-date="${dateStr}" style="position: relative; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
             <div class="drag-handle" style="position: absolute; left: 0; top: 0; bottom: 0; width: 80px; cursor: grab; opacity: 0; user-select: none; -webkit-user-select: none; touch-action: none;"></div>
-            <div style="font-size: 12px; color: #333; flex: 1; cursor: pointer;" onclick="editTask('${item.id}')">${displayTitle}</div>
+            <div style="font-size: 12px; color: #333; flex: 1; cursor: pointer;" onclick="editTaskReturnView='list'; editTask('${item.id}')">${displayTitle}</div>
             <div class="checkbox ${completed ? 'checked' : ''}" style="pointer-events: none; margin-left: 8px;">
               ${completed ? '✓' : ''}
             </div>
