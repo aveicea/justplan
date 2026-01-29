@@ -3,7 +3,6 @@ const DATABASE_ID = "468bf987e6cd4372abf96a8f30f165b1";
 const CALENDAR_DB_ID = "ddfee91eec854db08c445b0fa1abd347";
 const DDAY_DB_ID = "3ca479d92a3340b7813608b6dd7f4eac";
 const CORS_PROXY = "https://corsproxy.io/?";
-const NOTION_PROXY = "https://justplan-ashy.vercel.app/api/notion-proxy";
 
 let viewMode = 'timeline';
 let currentData = null;
@@ -102,19 +101,16 @@ async function undo() {
       // 삭제된 항목 다시 생성
       pendingUpdates++;
       try {
-        const response = await fetch(NOTION_PROXY, {
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent('https://api.notion.com/v1/pages')}`, {
           method: 'POST',
           headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            apiKey: NOTION_API_KEY,
-            endpoint: 'pages',
-            method: 'POST',
-            body: {
-              parent: { database_id: action.databaseId },
-              properties: action.before
-            }
+            parent: { database_id: action.databaseId },
+            properties: action.before
           })
         });
         if (response.ok) {
@@ -128,17 +124,14 @@ async function undo() {
       // 생성된 항목 삭제
       pendingUpdates++;
       try {
-        await fetch(NOTION_PROXY, {
-          method: 'POST',
+        await fetch(`${CORS_PROXY}${encodeURIComponent(`https://api.notion.com/v1/pages/${action.itemId}`)}`, {
+          method: 'PATCH',
           headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            apiKey: NOTION_API_KEY,
-            endpoint: `pages/${action.itemId}`,
-            method: 'PATCH',
-            body: { archived: true }
-          })
+          body: JSON.stringify({ archived: true })
         });
         redoStack.push(action);
       } finally {
@@ -178,17 +171,14 @@ async function redo() {
       // 다시 삭제
       pendingUpdates++;
       try {
-        await fetch(NOTION_PROXY, {
-          method: 'POST',
+        await fetch(`${CORS_PROXY}${encodeURIComponent(`https://api.notion.com/v1/pages/${action.itemId}`)}`, {
+          method: 'PATCH',
           headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            apiKey: NOTION_API_KEY,
-            endpoint: `pages/${action.itemId}`,
-            method: 'PATCH',
-            body: { archived: true }
-          })
+          body: JSON.stringify({ archived: true })
         });
         undoStack.push(action);
       } finally {
@@ -198,19 +188,16 @@ async function redo() {
       // 다시 생성
       pendingUpdates++;
       try {
-        const response = await fetch(NOTION_PROXY, {
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent('https://api.notion.com/v1/pages')}`, {
           method: 'POST',
           headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            apiKey: NOTION_API_KEY,
-            endpoint: 'pages',
-            method: 'POST',
-            body: {
-              parent: { database_id: action.databaseId },
-              properties: action.after
-            }
+            parent: { database_id: action.databaseId },
+            properties: action.after
           })
         });
         if (response.ok) {
@@ -457,19 +444,17 @@ window.confirmAddDDay = async function() {
       };
     }
 
-    const response = await fetch(NOTION_PROXY, {
+    const notionUrl = 'https://api.notion.com/v1/pages';
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        apiKey: NOTION_API_KEY,
-        endpoint: 'pages',
-        method: 'POST',
-        body: {
-          parent: { database_id: DDAY_DB_ID },
-          properties: properties
-        }
+        parent: { database_id: DDAY_DB_ID },
+        properties: properties
       })
     });
 
@@ -863,38 +848,34 @@ window.duplicateTask = async function(taskId) {
       properties['PLANNER'] = { relation: plannerRelation.map(r => ({ id: r.id })) };
     }
 
-    const response = await fetch(NOTION_PROXY, {
+    const notionUrl = 'https://api.notion.com/v1/pages';
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        apiKey: NOTION_API_KEY,
-        endpoint: 'pages',
-        method: 'POST',
-        body: {
-          parent: { database_id: DATABASE_ID },
-          properties: properties
-        }
+        parent: { database_id: DATABASE_ID },
+        properties: properties
       })
     });
 
     if (!response.ok) throw new Error('복제 실패');
 
     // 원본 항목을 완료 처리
-    await fetch(NOTION_PROXY, {
-      method: 'POST',
+    const updateUrl = `https://api.notion.com/v1/pages/${taskId}`;
+    await fetch(`${CORS_PROXY}${encodeURIComponent(updateUrl)}`, {
+      method: 'PATCH',
       headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        apiKey: NOTION_API_KEY,
-        endpoint: `pages/${taskId}`,
-        method: 'PATCH',
-        body: {
-          properties: {
-            '완료': { checkbox: true }
-          }
+        properties: {
+          '완료': { checkbox: true }
         }
       })
     });
@@ -1069,18 +1050,16 @@ window.deleteTask = async function(taskId) {
   (async () => {
     pendingUpdates++;
     try {
-      const response = await fetch(NOTION_PROXY, {
-        method: 'POST',
+      const notionUrl = `https://api.notion.com/v1/pages/${taskId}`;
+      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+        method: 'PATCH',
         headers: {
+          'Authorization': `Bearer ${NOTION_API_KEY}`,
+          'Notion-Version': '2022-06-28',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          apiKey: NOTION_API_KEY,
-          endpoint: `pages/${taskId}`,
-          method: 'PATCH',
-          body: {
-            archived: true
-          }
+          archived: true
         })
       });
 
@@ -1109,37 +1088,82 @@ window.cancelEdit = function() {
 };
 
 window.addNewTask = async function() {
-  const bookList = Object.entries(bookNames).map(([id, name]) => 
+  const bookList = Object.entries(bookNames).map(([id, name]) =>
     `<option value="${id}">${name}</option>`
   ).join('');
-  
+
   const content = document.getElementById('content');
-  
+
   content.innerHTML = `
     <div style="padding: 20px;">
       <h3 style="margin-bottom: 12px;">새 할 일 추가</h3>
-      
+
       <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">범위</label>
-      <input type="text" id="new-task-title" placeholder="할 일 제목" 
+      <input type="text" id="new-task-title" placeholder="할 일 제목"
         style="width: 100%; padding: 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 13px; margin-bottom: 12px;">
-      
+
       <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">책</label>
       <select id="new-task-book" style="width: 100%; padding: 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 13px; margin-bottom: 12px;">
         <option value="">선택 안 함</option>
         ${bookList}
       </select>
-      
+
       <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">목표 시간 (분)</label>
-      <input type="number" id="new-task-time" placeholder="60" 
+      <input type="number" id="new-task-time" placeholder="60"
         style="width: 100%; padding: 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 13px; margin-bottom: 12px;">
-      
+
       <div style="display: flex; gap: 8px;">
         <button onclick="confirmAddTask()" style="flex: 1; padding: 8px; background: #007AFF; color: white; border: none; border-radius: 4px; cursor: pointer;">추가</button>
         <button onclick="cancelAddTask()" style="flex: 1; padding: 8px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer;">취소</button>
       </div>
     </div>
   `;
-  
+
+  setTimeout(() => {
+    document.getElementById('new-task-title').focus();
+  }, 100);
+};
+
+window.addNewTaskForDate = async function(dateStr, fromListView = false) {
+  if (fromListView) {
+    addTaskReturnView = 'list';
+  } else {
+    addTaskReturnView = 'planner';
+  }
+
+  const bookList = Object.entries(bookNames).map(([id, name]) =>
+    `<option value="${id}">${name}</option>`
+  ).join('');
+
+  const content = document.getElementById('content');
+
+  content.innerHTML = `
+    <div style="padding: 20px;">
+      <h3 style="margin-bottom: 12px;">새 할 일 추가 (${formatDateLabelShort(dateStr)})</h3>
+
+      <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">범위</label>
+      <input type="text" id="new-task-title" placeholder="할 일 제목"
+        style="width: 100%; padding: 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 13px; margin-bottom: 12px;">
+
+      <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">책</label>
+      <select id="new-task-book" style="width: 100%; padding: 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 13px; margin-bottom: 12px;">
+        <option value="">선택 안 함</option>
+        ${bookList}
+      </select>
+
+      <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">목표 시간 (분)</label>
+      <input type="number" id="new-task-time" placeholder="60"
+        style="width: 100%; padding: 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 13px; margin-bottom: 12px;">
+
+      <input type="hidden" id="new-task-date" value="${dateStr}">
+
+      <div style="display: flex; gap: 8px;">
+        <button onclick="confirmAddTaskForDate()" style="flex: 1; padding: 8px; background: #007AFF; color: white; border: none; border-radius: 4px; cursor: pointer;">추가</button>
+        <button onclick="cancelAddTask()" style="flex: 1; padding: 8px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer;">취소</button>
+      </div>
+    </div>
+  `;
+
   setTimeout(() => {
     document.getElementById('new-task-title').focus();
   }, 100);
@@ -1149,7 +1173,7 @@ window.confirmAddTask = async function() {
   const titleInput = document.getElementById('new-task-title');
   const bookSelect = document.getElementById('new-task-book');
   const timeInput = document.getElementById('new-task-time');
-  
+
   const title = titleInput.value.trim();
 
   if (!title) {
@@ -1171,48 +1195,135 @@ window.confirmAddTask = async function() {
       },
       '완료': { checkbox: false }
     };
-    
+
     if (bookSelect.value) {
       properties['책'] = {
         relation: [{ id: bookSelect.value }]
       };
     }
-    
+
     if (timeInput.value) {
       properties['목표 시간'] = {
         number: parseInt(timeInput.value)
       };
     }
-    
+
     const existingPriorities = currentData.results
       .map(t => t.properties?.['우선순위']?.select?.name)
       .filter(Boolean)
       .map(p => parseInt(p.replace(/\D/g, '')));
-    
-    const nextPriority = existingPriorities.length > 0 
-      ? Math.max(...existingPriorities) + 1 
+
+    const nextPriority = existingPriorities.length > 0
+      ? Math.max(...existingPriorities) + 1
       : 1;
-    
+
     if (nextPriority <= 20) {
       const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th'];
       properties['우선순위'] = {
         select: { name: priorityOrder[nextPriority - 1] }
       };
     }
-    
-    const response = await fetch(NOTION_PROXY, {
+
+    const notionUrl = 'https://api.notion.com/v1/pages';
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        apiKey: NOTION_API_KEY,
-        endpoint: 'pages',
-        method: 'POST',
-        body: {
-          parent: { database_id: DATABASE_ID },
-          properties: properties
-        }
+        parent: { database_id: DATABASE_ID },
+        properties: properties
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.message || '추가 실패');
+    }
+
+    await fetchAllData();
+    completeLoading(`${title} 추가`);
+  } catch (error) {
+    console.error('할 일 추가 오류:', error);
+    completeLoading(`${title} 추가 실패`);
+  } finally {
+    pendingUpdates--;
+    if (pendingUpdates === 0 && needsRefresh) {
+      setTimeout(() => fetchAllData(), 100);
+    }
+  }
+};
+
+window.confirmAddTaskForDate = async function() {
+  const titleInput = document.getElementById('new-task-title');
+  const bookSelect = document.getElementById('new-task-book');
+  const timeInput = document.getElementById('new-task-time');
+  const dateInput = document.getElementById('new-task-date');
+
+  const title = titleInput.value.trim();
+
+  if (!title) {
+    return;
+  }
+
+  startLoading(`${title} 추가`);
+
+  pendingUpdates++;
+  try {
+    const targetDate = dateInput.value; // hidden input에서 날짜 가져오기
+
+    const properties = {
+      '범위': {
+        title: [{ text: { content: title } }]
+      },
+      '날짜': {
+        date: { start: targetDate }
+      },
+      '완료': { checkbox: false }
+    };
+
+    if (bookSelect.value) {
+      properties['책'] = {
+        relation: [{ id: bookSelect.value }]
+      };
+    }
+
+    if (timeInput.value) {
+      properties['목표 시간'] = {
+        number: parseInt(timeInput.value)
+      };
+    }
+
+    const existingPriorities = currentData.results
+      .map(t => t.properties?.['우선순위']?.select?.name)
+      .filter(Boolean)
+      .map(p => parseInt(p.replace(/\D/g, '')));
+
+    const nextPriority = existingPriorities.length > 0
+      ? Math.max(...existingPriorities) + 1
+      : 1;
+
+    if (nextPriority <= 20) {
+      const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th'];
+      properties['우선순위'] = {
+        select: { name: priorityOrder[nextPriority - 1] }
+      };
+    }
+
+    const notionUrl = 'https://api.notion.com/v1/pages';
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        parent: { database_id: DATABASE_ID },
+        properties: properties
       })
     });
 
@@ -1461,19 +1572,17 @@ window.updateDate = async function(taskId, newDate) {
       properties['우선순위'] = { select: { name: priority } };
     }
 
-    const response = await fetch(NOTION_PROXY, {
+    const notionUrl = 'https://api.notion.com/v1/pages';
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        apiKey: NOTION_API_KEY,
-        endpoint: 'pages',
-        method: 'POST',
-        body: {
-          parent: { database_id: DATABASE_ID },
-          properties: properties
-        }
+        parent: { database_id: DATABASE_ID },
+        properties: properties
       })
     });
 
@@ -1612,19 +1721,17 @@ window.updateDateInTask = async function(taskId, newDate) {
       properties['우선순위'] = { select: { name: priority } };
     }
 
-    const response = await fetch(NOTION_PROXY, {
+    const notionUrl = 'https://api.notion.com/v1/pages';
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        apiKey: NOTION_API_KEY,
-        endpoint: 'pages',
-        method: 'POST',
-        body: {
-          parent: { database_id: DATABASE_ID },
-          properties: properties
-        }
+        parent: { database_id: DATABASE_ID },
+        properties: properties
       })
     });
 
@@ -1763,25 +1870,33 @@ async function fetchData(retryCount = 0) {
     const pastDateStr = `${pastDate.getFullYear()}-${String(pastDate.getMonth() + 1).padStart(2, '0')}-${String(pastDate.getDate()).padStart(2, '0')}`;
     const futureDateStr = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, '0')}-${String(futureDate.getDate()).padStart(2, '0')}`;
 
-    const response = await fetch(NOTION_PROXY, {
+    const notionUrl = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        apiKey: NOTION_API_KEY,
-        endpoint: `databases/${DATABASE_ID}/query`,
-        method: 'POST',
-        body: {
-          page_size: 100,
-          filter: {
-            and: [
-              { property: '날짜', date: { on_or_after: pastDateStr } },
-              { property: '날짜', date: { on_or_before: futureDateStr } }
-            ]
-          },
-          sorts: [{ property: "날짜", direction: "descending" }]
-        }
+        page_size: 100,
+        filter: {
+          and: [
+            {
+              property: '날짜',
+              date: {
+                on_or_after: pastDateStr
+              }
+            },
+            {
+              property: '날짜',
+              date: {
+                on_or_before: futureDateStr
+              }
+            }
+          ]
+        },
+        sorts: [{ property: "날짜", direction: "descending" }]
       })
     });
 
@@ -1840,19 +1955,17 @@ async function fetchAllData() {
 
   try {
     needsRefresh = false;
-    const response = await fetch(NOTION_PROXY, {
+    const notionUrl = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        apiKey: NOTION_API_KEY,
-        endpoint: `databases/${DATABASE_ID}/query`,
-        method: 'POST',
-        body: {
-          page_size: 100,
-          sorts: [{ property: "날짜", direction: "descending" }]
-        }
+        page_size: 100,
+        sorts: [{ property: "날짜", direction: "descending" }]
       })
     });
 
@@ -1891,17 +2004,12 @@ async function fetchBookNames() {
     .filter(bookId => !bookNames[bookId])
     .map(async (bookId) => {
       try {
-        const response = await fetch(NOTION_PROXY, {
-          method: 'POST',
+        const notionUrl = `https://api.notion.com/v1/pages/${bookId}`;
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
           headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            apiKey: NOTION_API_KEY,
-            endpoint: `pages/${bookId}`,
-            method: 'GET',
-            body: {}
-          })
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28'
+          }
         });
 
         if (response.ok) {
@@ -2518,17 +2626,15 @@ async function updateTaskOrder() {
 async function updateNotionPage(pageId, properties) {
   pendingUpdates++;
   try {
-    const response = await fetch(NOTION_PROXY, {
-      method: 'POST',
+    const notionUrl = `https://api.notion.com/v1/pages/${pageId}`;
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+      method: 'PATCH',
       headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        apiKey: NOTION_API_KEY,
-        endpoint: `pages/${pageId}`,
-        method: 'PATCH',
-        body: { properties }
-      })
+      body: JSON.stringify({ properties })
     });
 
     if (!response.ok) {
@@ -2636,20 +2742,18 @@ async function linkPrePlanToPlannerSilent() {
       // 프리플랜의 PLANNER 속성에 플래너 항목 연결
       pendingUpdates++;
       try {
-        await fetch(NOTION_PROXY, {
-          method: 'POST',
+        const prePlanUpdateUrl = `https://api.notion.com/v1/pages/${prePlanItem.id}`;
+        await fetch(`${CORS_PROXY}${encodeURIComponent(prePlanUpdateUrl)}`, {
+          method: 'PATCH',
           headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            apiKey: NOTION_API_KEY,
-            endpoint: `pages/${prePlanItem.id}`,
-            method: 'PATCH',
-            body: {
-              properties: {
-                'PLANNER': {
-                  relation: [{ id: matchingPlannerItem.id }]
-                }
+            properties: {
+              'PLANNER': {
+                relation: [{ id: matchingPlannerItem.id }]
               }
             }
           })
@@ -2661,20 +2765,18 @@ async function linkPrePlanToPlannerSilent() {
       // 플래너의 PRE-PLAN 속성에 프리플랜 항목 연결 (속성이 없을 수 있으므로 에러 무시)
       pendingUpdates++;
       try {
-        await fetch(NOTION_PROXY, {
-          method: 'POST',
+        const plannerUpdateUrl = `https://api.notion.com/v1/pages/${matchingPlannerItem.id}`;
+        await fetch(`${CORS_PROXY}${encodeURIComponent(plannerUpdateUrl)}`, {
+          method: 'PATCH',
           headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            apiKey: NOTION_API_KEY,
-            endpoint: `pages/${matchingPlannerItem.id}`,
-            method: 'PATCH',
-            body: {
-              properties: {
-                'PRE-PLAN': {
-                  relation: [{ id: prePlanItem.id }]
-                }
+            properties: {
+              'PRE-PLAN': {
+                relation: [{ id: prePlanItem.id }]
               }
             }
           })
@@ -2786,19 +2888,17 @@ window.duplicateAllIncompleteTasks = async function() {
       // 복제 생성
       pendingUpdates++;
       try {
-        const response = await fetch(NOTION_PROXY, {
+        const notionUrl = 'https://api.notion.com/v1/pages';
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
           method: 'POST',
           headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            apiKey: NOTION_API_KEY,
-            endpoint: 'pages',
-            method: 'POST',
-            body: {
-              parent: { database_id: DATABASE_ID },
-              properties: properties
-            }
+            parent: { database_id: DATABASE_ID },
+            properties: properties
           })
         });
 
@@ -2833,19 +2933,17 @@ async function fetchCalendarData(silent = false) {
   }
 
   try {
-    const response = await fetch(NOTION_PROXY, {
+    const notionUrl = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        apiKey: NOTION_API_KEY,
-        endpoint: `databases/${DATABASE_ID}/query`,
-        method: 'POST',
-        body: {
-          page_size: 100,
-          sorts: [{ property: "날짜", direction: "descending" }]
-        }
+        page_size: 100,
+        sorts: [{ property: "날짜", direction: "descending" }]
       })
     });
 
@@ -2873,25 +2971,38 @@ async function fetchDDayData() {
     const todayDate = new Date();
     const today = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;
 
-    const response = await fetch(NOTION_PROXY, {
+    const notionUrl = `https://api.notion.com/v1/databases/${DDAY_DB_ID}/query`;
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        apiKey: NOTION_API_KEY,
-        endpoint: `databases/${DDAY_DB_ID}/query`,
-        method: 'POST',
-        body: {
-          page_size: 100,
-          filter: {
-            and: [
-              { property: 'date', date: { on_or_after: today } },
-              { property: '디데이 표시', checkbox: { equals: true } }
-            ]
-          },
-          sorts: [{ property: 'date', direction: 'ascending' }]
-        }
+        page_size: 100,
+        filter: {
+          and: [
+            {
+              property: 'date',
+              date: {
+                on_or_after: today
+              }
+            },
+            {
+              property: '디데이 표시',
+              checkbox: {
+                equals: true
+              }
+            }
+          ]
+        },
+        sorts: [
+          {
+            property: 'date',
+            direction: 'ascending'
+          }
+        ]
       })
     });
 
@@ -2930,7 +3041,20 @@ window.updateCalendarItemDate = async function(itemId, newDate) {
 
     // 노션에 실제로 날짜 업데이트
     try {
-      updateCalendarItemDate
+      const notionUrl = `https://api.notion.com/v1/pages/${itemId}`;
+      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${NOTION_API_KEY}`,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          properties: {
+            '날짜': { date: { start: newDate } }
+          }
+        })
+      });
 
       if (!response.ok) {
         throw new Error('날짜 업데이트 실패');
@@ -3024,19 +3148,17 @@ window.saveToPlanner = async function(dateStr) {
 
       pendingUpdates++;
       try {
-        const response = await fetch(NOTION_PROXY, {
+        const notionUrl = 'https://api.notion.com/v1/pages';
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
           method: 'POST',
           headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            apiKey: NOTION_API_KEY,
-            endpoint: 'pages',
-            method: 'POST',
-            body: {
-              parent: { database_id: DATABASE_ID },
-              properties: properties
-            }
+            parent: { database_id: DATABASE_ID },
+            properties: properties
           })
         });
 
@@ -3107,19 +3229,17 @@ window.saveAllToPlanner = async function() {
 
       pendingUpdates++;
       try {
-        const response = await fetch(NOTION_PROXY, {
+        const notionUrl = 'https://api.notion.com/v1/pages';
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
           method: 'POST',
           headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            apiKey: NOTION_API_KEY,
-            endpoint: 'pages',
-            method: 'POST',
-            body: {
-              parent: { database_id: DATABASE_ID },
-              properties: properties
-            }
+            parent: { database_id: DATABASE_ID },
+            properties: properties
           })
         });
 
@@ -3161,18 +3281,16 @@ window.undoCalendarSync = async function() {
     for (const itemId of lastSyncedItems) {
       pendingUpdates++;
       try {
-        const response = await fetch(NOTION_PROXY, {
-          method: 'POST',
+        const notionUrl = `https://api.notion.com/v1/pages/${itemId}`;
+        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+          method: 'PATCH',
           headers: {
+            'Authorization': `Bearer ${NOTION_API_KEY}`,
+            'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            apiKey: NOTION_API_KEY,
-            endpoint: `pages/${itemId}`,
-            method: 'PATCH',
-            body: {
-              archived: true
-            }
+            archived: true
           })
         });
 
@@ -3282,19 +3400,17 @@ window.syncPlannerToCalendar = async function() {
           // 날짜가 다르면 업데이트
           pendingUpdates++;
           try {
-            const response = await fetch(NOTION_PROXY, {
-              method: 'POST',
+            const notionUrl = `https://api.notion.com/v1/pages/${existingItem.id}`;
+            const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+              method: 'PATCH',
               headers: {
+                'Authorization': `Bearer ${NOTION_API_KEY}`,
+                'Notion-Version': '2022-06-28',
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({
-                apiKey: NOTION_API_KEY,
-                endpoint: `pages/${existingItem.id}`,
-                method: 'PATCH',
-                body: {
-                  properties: {
-                    '날짜': { date: { start: dateStart } }
-                  }
+                properties: {
+                  '날짜': { date: { start: dateStart } }
                 }
               })
             });
@@ -3427,7 +3543,7 @@ function renderCalendarView() {
       <div style="margin-bottom: 20px;">
         <div style="display: flex; align-items: center; margin-bottom: 8px; gap: 8px;">
           <h4 style="${dateStyle} cursor: pointer;" onclick="toggleCalendarView('${dateStr}')" title="플래너로 이동">${dateLabel}</h4>
-          <button onclick="addTaskReturnView='list'; addNewTaskForDate('${dateStr}')" style="font-size: 16px; padding: 0; background: none; border: none; cursor: pointer; color: #999;">+</button>
+          <button onclick="addNewTaskForDate('${dateStr}', true)" style="font-size: 16px; padding: 0; background: none; border: none; cursor: pointer; color: #999;">+</button>
         </div>
         <div class="calendar-date-group" data-date="${dateStr}">
     `;
