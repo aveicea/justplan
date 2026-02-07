@@ -2207,7 +2207,7 @@ function renderTimelineView() {
   });
 
   const totalDiff = totalActual - totalTarget;
-  const diffSign = totalDiff === 0 ? '±' : (totalDiff > 0 ? '+' : '-');
+  const diffSign = totalDiff === 0 ? '-' : (totalDiff > 0 ? '+' : '-');
   const diffAbs = Math.abs(totalDiff);
 
   const content = document.getElementById('content');
@@ -2401,7 +2401,7 @@ function renderTaskView() {
   });
 
   const totalDiff = totalActual - totalTarget;
-  const diffSign = totalDiff === 0 ? '±' : (totalDiff > 0 ? '+' : '-');
+  const diffSign = totalDiff === 0 ? '-' : (totalDiff > 0 ? '+' : '-');
   const diffAbs = Math.abs(totalDiff);
 
   const content = document.getElementById('content');
