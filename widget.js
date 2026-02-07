@@ -2,7 +2,7 @@ const NOTION_API_KEY = "secret_pNLmc1M6IlbkoiwoUrKnE2mzJlJGYZ61eppTt5tRZuR";
 const DATABASE_ID = "468bf987e6cd4372abf96a8f30f165b1";
 const CALENDAR_DB_ID = "ddfee91eec854db08c445b0fa1abd347";
 const DDAY_DB_ID = "3ca479d92a3340b7813608b6dd7f4eac";
-const CORS_PROXY = "https://corsproxy.io/?";
+const CORS_PROXY = "https://justplan-ashy.vercel.app/api/proxy?url=";
 
 let viewMode = 'timeline';
 let currentData = null;
