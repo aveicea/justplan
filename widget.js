@@ -1208,7 +1208,11 @@ window.confirmAddTask = async function() {
       };
     }
 
-    const existingPriorities = currentData.results
+    const sameDayTasks = currentData.results.filter(t => {
+      const dateStart = t.properties?.['날짜']?.date?.start;
+      return dateStart && dateStart === todayDate;
+    });
+    const existingPriorities = sameDayTasks
       .map(t => t.properties?.['우선순위']?.select?.name)
       .filter(Boolean)
       .map(p => parseInt(p.replace(/\D/g, '')));
@@ -1297,7 +1301,11 @@ window.confirmAddTaskForDate = async function() {
       };
     }
 
-    const existingPriorities = currentData.results
+    const sameDayTasks = currentData.results.filter(t => {
+      const dateStart = t.properties?.['날짜']?.date?.start;
+      return dateStart && dateStart === targetDate;
+    });
+    const existingPriorities = sameDayTasks
       .map(t => t.properties?.['우선순위']?.select?.name)
       .filter(Boolean)
       .map(p => parseInt(p.replace(/\D/g, '')));
