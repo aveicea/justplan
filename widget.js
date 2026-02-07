@@ -308,8 +308,8 @@ window.toggleDDaySelector = async function() {
   let html = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
       <h3 style="margin: 0; font-size: 14px; font-weight: 600;">D-Day 선택</h3>
-      <button onclick="renderData()" style="font-size: 12px; padding: 4px 8px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer;">닫기</button>
     </div>
+    <button onclick="addDDay()" style="width: 100%; padding: 8px; margin-bottom: 12px; background: #34C759; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">+ 추가</button>
     <div style="display: flex; flex-direction: column; gap: 8px;">
   `;
 
@@ -344,8 +344,8 @@ window.toggleDDaySelector = async function() {
   html += `
     </div>
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px;">
-      <button onclick="addDDay()" style="padding: 8px; background: #34C759; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">추가</button>
       <button onclick="clearDDay()" style="padding: 8px; background: #FF3B30; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">D-Day 제거</button>
+      <button onclick="ddaySelectorOpen=false; renderData()" style="padding: 8px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">닫기</button>
     </div>
   `;
 
