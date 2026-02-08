@@ -1791,25 +1791,25 @@ window.updateRating = async function(taskId, value) {
 document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
 
-  // 메인 플래너 데이터 일부만 먼저 로드해서 빠르게 표시 (오늘 ±7~30일)
-  await fetchData();
+  // 플래너 + D-Day + 캘린더 동시 로드
+  const fetchDataPromise = fetchData();
 
-  // 전체 플래너 데이터 백그라운드에서 로드
-  fetchAllData().catch(err => {
-    console.error('전체 데이터 로드 실패:', err);
-  });
-
-  // D-Day 데이터는 백그라운드에서 로드
   fetchDDayData().then(() => {
     autoSelectClosestDDay();
-    renderData(); // D-Day 로드 후 화면 업데이트
+    renderData();
   }).catch(err => {
     console.error('D-Day loading failed:', err);
   });
 
-  // 캘린더 데이터도 백그라운드에서 로드 (조용히)
   fetchCalendarData(true).catch(err => {
     console.error('Calendar loading failed:', err);
+  });
+
+  await fetchDataPromise;
+
+  // 전체 플래너 데이터 백그라운드에서 로드
+  fetchAllData().catch(err => {
+    console.error('전체 데이터 로드 실패:', err);
   });
 
   setInterval(fetchAllData, 300000);
@@ -1914,11 +1914,11 @@ async function fetchData(retryCount = 0) {
 
     currentData = await response.json();
 
-    // 책 이름 불러오기
-    await fetchBookNames();
-
-    // 렌더링
+    // 먼저 렌더링 (책 이름 없이 빠르게 표시)
     renderData();
+
+    // 책 이름은 백그라운드에서 로드 후 재렌더링
+    fetchBookNames().then(() => renderData());
     updateLastUpdateTime();
     completeLoading('플래너 데이터 로드');
   } catch (error) {
