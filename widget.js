@@ -1791,25 +1791,25 @@ window.updateRating = async function(taskId, value) {
 document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
 
-  // 메인 플래너 데이터 일부만 먼저 로드해서 빠르게 표시 (오늘 ±7~30일)
-  await fetchData();
+  // 플래너 + D-Day + 캘린더 동시 로드
+  const fetchDataPromise = fetchData();
 
-  // 전체 플래너 데이터 백그라운드에서 로드
-  fetchAllData().catch(err => {
-    console.error('전체 데이터 로드 실패:', err);
-  });
-
-  // D-Day 데이터는 백그라운드에서 로드
   fetchDDayData().then(() => {
     autoSelectClosestDDay();
-    renderData(); // D-Day 로드 후 화면 업데이트
+    renderData();
   }).catch(err => {
     console.error('D-Day loading failed:', err);
   });
 
-  // 캘린더 데이터도 백그라운드에서 로드 (조용히)
   fetchCalendarData(true).catch(err => {
     console.error('Calendar loading failed:', err);
+  });
+
+  await fetchDataPromise;
+
+  // 전체 플래너 데이터 백그라운드에서 로드
+  fetchAllData().catch(err => {
+    console.error('전체 데이터 로드 실패:', err);
   });
 
   setInterval(fetchAllData, 300000);
@@ -2222,7 +2222,7 @@ function renderTimelineView() {
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
       <div style="flex: 1;"></div>
       <div style="font-size: 11px; color: #86868b; text-align: center;">
-        목표 ${formatMinutesToTime(totalTarget)} / 실제 ${formatMinutesToTime(totalActual)} <span style="color: ${totalDiff > 0 ? '#FF3B30' : totalDiff < 0 ? '#34C759' : '#666'};">${totalActual === 0 ? '(-)' : `(${diffSign}${formatMinutesToTime(diffAbs)})`}</span>
+        목표 ${formatMinutesToTime(totalTarget)} / 실제 ${formatMinutesToTime(totalActual)} <span style="color: ${totalActual === 0 ? '#666' : totalDiff > 0 ? '#FF3B30' : totalDiff < 0 ? '#34C759' : '#666'};">${totalActual === 0 ? '(-)' : `(${diffSign}${formatMinutesToTime(diffAbs)})`}</span>
       </div>
       <div style="flex: 1; display: flex; justify-content: flex-end;">
         ${incompleteTasks.length > 0 ? `<button onclick="duplicateAllIncompleteTasks()" style="font-size: 16px; padding: 4px 8px; background: none; border: none; cursor: pointer; color: #999;">→</button>` : ''}
@@ -2414,7 +2414,7 @@ function renderTaskView() {
       <button onclick="changeDate(1)" style="font-size: 16px; padding: 4px 12px; color: #999;">▶</button>
     </div>
     <div style="font-size: 11px; color: #86868b; margin-bottom: 12px; text-align: center;">
-      목표 ${formatMinutesToTime(totalTarget)} / 실제 ${formatMinutesToTime(totalActual)} <span style="color: ${totalDiff > 0 ? '#FF3B30' : totalDiff < 0 ? '#34C759' : '#666'};">${totalActual === 0 ? '(-)' : `(${diffSign}${formatMinutesToTime(diffAbs)})`}</span>
+      목표 ${formatMinutesToTime(totalTarget)} / 실제 ${formatMinutesToTime(totalActual)} <span style="color: ${totalActual === 0 ? '#666' : totalDiff > 0 ? '#FF3B30' : totalDiff < 0 ? '#34C759' : '#666'};">${totalActual === 0 ? '(-)' : `(${diffSign}${formatMinutesToTime(diffAbs)})`}</span>
     </div>
     <button onclick="addNewTask()" style="width: 100%; margin-bottom: 12px; padding: 8px; background: #999; color: white; border-radius: 8px; cursor: pointer; border: none; font-size: 13px;">+ 추가</button>
     <div class="task-list" id="task-sortable">
