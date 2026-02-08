@@ -1914,11 +1914,11 @@ async function fetchData(retryCount = 0) {
 
     currentData = await response.json();
 
-    // 먼저 렌더링 (책 이름 없이 빠르게 표시)
-    renderData();
+    // 책 이름 불러오기
+    await fetchBookNames();
 
-    // 책 이름은 백그라운드에서 로드 후 재렌더링
-    fetchBookNames().then(() => renderData());
+    // 렌더링
+    renderData();
     updateLastUpdateTime();
     completeLoading('플래너 데이터 로드');
   } catch (error) {
