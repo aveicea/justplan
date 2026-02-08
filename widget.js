@@ -2207,7 +2207,7 @@ function renderTimelineView() {
   });
 
   const totalDiff = totalActual - totalTarget;
-  const diffSign = totalDiff === 0 ? '±' : (totalDiff > 0 ? '+' : '-');
+  const diffSign = totalDiff === 0 ? '' : (totalDiff > 0 ? '+' : '-');
   const diffAbs = Math.abs(totalDiff);
 
   const content = document.getElementById('content');
@@ -2222,7 +2222,7 @@ function renderTimelineView() {
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
       <div style="flex: 1;"></div>
       <div style="font-size: 11px; color: #86868b; text-align: center;">
-        목표 ${formatMinutesToTime(totalTarget)} / 실제 ${formatMinutesToTime(totalActual)} <span style="color: ${totalDiff > 0 ? '#FF3B30' : totalDiff < 0 ? '#34C759' : '#666'};">(${diffSign}${formatMinutesToTime(diffAbs)})</span>
+        목표 ${formatMinutesToTime(totalTarget)} / 실제 ${formatMinutesToTime(totalActual)} <span style="color: ${totalDiff > 0 ? '#FF3B30' : totalDiff < 0 ? '#34C759' : '#666'};">${totalActual === 0 ? '(-)' : `(${diffSign}${formatMinutesToTime(diffAbs)})`}</span>
       </div>
       <div style="flex: 1; display: flex; justify-content: flex-end;">
         ${incompleteTasks.length > 0 ? `<button onclick="duplicateAllIncompleteTasks()" style="font-size: 16px; padding: 4px 8px; background: none; border: none; cursor: pointer; color: #999;">→</button>` : ''}
@@ -2401,7 +2401,7 @@ function renderTaskView() {
   });
 
   const totalDiff = totalActual - totalTarget;
-  const diffSign = totalDiff === 0 ? '±' : (totalDiff > 0 ? '+' : '-');
+  const diffSign = totalDiff === 0 ? '' : (totalDiff > 0 ? '+' : '-');
   const diffAbs = Math.abs(totalDiff);
 
   const content = document.getElementById('content');
@@ -2414,7 +2414,7 @@ function renderTaskView() {
       <button onclick="changeDate(1)" style="font-size: 16px; padding: 4px 12px; color: #999;">▶</button>
     </div>
     <div style="font-size: 11px; color: #86868b; margin-bottom: 12px; text-align: center;">
-      목표 ${formatMinutesToTime(totalTarget)} / 실제 ${formatMinutesToTime(totalActual)} <span style="color: ${totalDiff > 0 ? '#FF3B30' : totalDiff < 0 ? '#34C759' : '#666'};">(${diffSign}${formatMinutesToTime(diffAbs)})</span>
+      목표 ${formatMinutesToTime(totalTarget)} / 실제 ${formatMinutesToTime(totalActual)} <span style="color: ${totalDiff > 0 ? '#FF3B30' : totalDiff < 0 ? '#34C759' : '#666'};">${totalActual === 0 ? '(-)' : `(${diffSign}${formatMinutesToTime(diffAbs)})`}</span>
     </div>
     <button onclick="addNewTask()" style="width: 100%; margin-bottom: 12px; padding: 8px; background: #999; color: white; border-radius: 8px; cursor: pointer; border: none; font-size: 13px;">+ 추가</button>
     <div class="task-list" id="task-sortable">
