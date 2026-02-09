@@ -345,9 +345,8 @@ window.toggleDDaySelector = async function() {
 
   html += `
     </div>
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px;">
-      <button onclick="addDDay()" style="padding: 8px; background: #34C759; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">추가</button>
-      <button onclick="ddaySelectorOpen=false; renderData()" style="padding: 8px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">닫기</button>
+    <div style="margin-top: 16px;">
+      <button onclick="ddaySelectorOpen=false; renderData()" style="width: 100%; padding: 8px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">닫기</button>
     </div>
   `;
 
@@ -1484,7 +1483,7 @@ window.updateTime = async function(taskId, field, value, inputElement) {
       });
     }
     completeLoading(`${taskTitle} ${fieldName} 수정`);
-    // fetchAllData 하지 않음 - UI는 이미 업데이트됨
+    scheduleRenderData();
   } catch (error) {
     console.error('시간 업데이트 실패:', error);
     completeLoading(`${taskTitle} ${fieldName} 수정 실패`);
