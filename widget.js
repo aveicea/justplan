@@ -10,6 +10,7 @@ let currentData = null;
 let calendarData = null;
 let ddayData = null;
 let bookNames = {};
+let activeBookIds = new Set();
 let currentDate = new Date();
 currentDate.setHours(0, 0, 0, 0); // 초기화 시 시간을 00:00:00으로 설정
 let calendarViewMode = false;
@@ -735,9 +736,10 @@ window.editTask = async function(taskId) {
   const end = task.properties?.['끝']?.rich_text?.[0]?.plain_text || '';
   const rating = task.properties?.['(੭•̀ᴗ•̀)੭']?.select?.name || '';
   
-  const bookList = Object.entries(bookNames).map(([id, name]) => 
-    `<option value="${id}" ${id === bookId ? 'selected' : ''}>${name}</option>`
-  ).join('');
+  const bookList = Object.entries(bookNames)
+    .filter(([id]) => activeBookIds.has(id) || id === bookId)
+    .map(([id, name]) => `<option value="${id}" ${id === bookId ? 'selected' : ''}>${name}</option>`)
+    .join('');
   
   const content = document.getElementById('content');
   
@@ -1090,9 +1092,10 @@ window.cancelEdit = function() {
 };
 
 window.addNewTask = async function() {
-  const bookList = Object.entries(bookNames).map(([id, name]) =>
-    `<option value="${id}">${name}</option>`
-  ).join('');
+  const bookList = Object.entries(bookNames)
+    .filter(([id]) => activeBookIds.has(id))
+    .map(([id, name]) => `<option value="${id}">${name}</option>`)
+    .join('');
 
   const content = document.getElementById('content');
 
@@ -1133,9 +1136,10 @@ window.addNewTaskForDate = async function(dateStr, fromListView = false) {
     addTaskReturnView = 'planner';
   }
 
-  const bookList = Object.entries(bookNames).map(([id, name]) =>
-    `<option value="${id}">${name}</option>`
-  ).join('');
+  const bookList = Object.entries(bookNames)
+    .filter(([id]) => activeBookIds.has(id))
+    .map(([id, name]) => `<option value="${id}">${name}</option>`)
+    .join('');
 
   const content = document.getElementById('content');
 
@@ -2009,26 +2013,25 @@ async function fetchBookNames() {
         'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        filter: {
-          or: [
-            { property: '진행', select: { equals: '하는 중' } },
-            { property: '진행', select: { equals: '하기 전' } }
-          ]
-        }
-      })
+      body: JSON.stringify({})
     });
 
     if (response.ok) {
       const data = await response.json();
+      activeBookIds.clear();
       data.results.forEach(book => {
+        let name = '책';
         for (const [key, value] of Object.entries(book.properties)) {
           if (value.type === 'title' && value.title && value.title.length > 0) {
-            bookNames[book.id] = value.title[0].plain_text;
+            name = value.title[0].plain_text;
             break;
           }
         }
-        if (!bookNames[book.id]) bookNames[book.id] = '책';
+        bookNames[book.id] = name;
+        const progress = book.properties?.['진행']?.select?.name;
+        if (progress === '하는 중' || progress === '하기 전') {
+          activeBookIds.add(book.id);
+        }
       });
     }
   } catch (error) {
