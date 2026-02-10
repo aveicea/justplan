@@ -2,6 +2,7 @@ const NOTION_API_KEY = "secret_pNLmc1M6IlbkoiwoUrKnE2mzJlJGYZ61eppTt5tRZuR";
 const DATABASE_ID = "468bf987e6cd4372abf96a8f30f165b1";
 const CALENDAR_DB_ID = "ddfee91eec854db08c445b0fa1abd347";
 const DDAY_DB_ID = "3ca479d92a3340b7813608b6dd7f4eac";
+const BOOK_DB_ID = "41c3889d4617465db9df008e96ca5af1";
 const CORS_PROXY = "https://justplan-ashy.vercel.app/api/proxy?url=";
 
 let viewMode = 'timeline';
@@ -1999,48 +2000,40 @@ async function fetchAllData() {
 }
 
 async function fetchBookNames() {
-  const bookIds = new Set();
-
-  // planner 데이터베이스의 책 ID 수집
-  currentData.results.forEach(task => {
-    const bookRelations = task.properties?.['책']?.relation || [];
-    bookRelations.forEach(rel => bookIds.add(rel.id));
-  });
-
-
-  // 모든 책 데이터를 병렬로 가져오기
-  const fetchPromises = Array.from(bookIds)
-    .filter(bookId => !bookNames[bookId])
-    .map(async (bookId) => {
-      try {
-        const notionUrl = `https://api.notion.com/v1/pages/${bookId}`;
-        const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-          headers: {
-            'Authorization': `Bearer ${NOTION_API_KEY}`,
-            'Notion-Version': '2022-06-28'
-          }
-        });
-
-        if (response.ok) {
-          const bookData = await response.json();
-          for (const [key, value] of Object.entries(bookData.properties)) {
-            if (value.type === 'title' && value.title && value.title.length > 0) {
-              bookNames[bookId] = value.title[0].plain_text;
-              break;
-            }
-          }
-          if (!bookNames[bookId]) bookNames[bookId] = '책';
-        } else {
-          console.warn(`Failed to fetch book ${bookId}: ${response.status}`);
-          bookNames[bookId] = '책';
+  try {
+    const notionUrl = `https://api.notion.com/v1/databases/${BOOK_DB_ID}/query`;
+    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        filter: {
+          or: [
+            { property: '진행', select: { equals: '하는 중' } },
+            { property: '진행', select: { equals: '하기 전' } }
+          ]
         }
-      } catch (error) {
-        console.warn(`Error fetching book ${bookId}:`, error);
-        bookNames[bookId] = '책';
-      }
+      })
     });
 
-  await Promise.all(fetchPromises);
+    if (response.ok) {
+      const data = await response.json();
+      data.results.forEach(book => {
+        for (const [key, value] of Object.entries(book.properties)) {
+          if (value.type === 'title' && value.title && value.title.length > 0) {
+            bookNames[book.id] = value.title[0].plain_text;
+            break;
+          }
+        }
+        if (!bookNames[book.id]) bookNames[book.id] = '책';
+      });
+    }
+  } catch (error) {
+    console.warn('책 목록 로드 실패:', error);
+  }
 }
 
 function getTaskTitle(task) {
