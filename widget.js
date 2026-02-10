@@ -252,7 +252,9 @@ function scheduleRenderData() {
     clearTimeout(renderDataTimer);
   }
   renderDataTimer = setTimeout(() => {
-    renderData();
+    if (!document.getElementById('new-task-title') && !document.getElementById('edit-task-title')) {
+      renderData();
+    }
     renderDataTimer = null;
   }, 300); // 0.3초 후 렌더링
 }
@@ -1803,7 +1805,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   fetchDDayData().then(() => {
     autoSelectClosestDDay();
-    renderData();
+    if (!document.getElementById('new-task-title') && !document.getElementById('edit-task-title')) {
+      renderData();
+    }
   }).catch(err => {
     console.error('D-Day loading failed:', err);
   });
@@ -1991,6 +1995,11 @@ async function fetchAllData() {
 
     // 책 이름 불러오기
     await fetchBookNames();
+
+    // 폼이 열려있으면 재렌더링 스킵 (할일 추가/수정 중 튕김 방지)
+    if (document.getElementById('new-task-title') || document.getElementById('edit-task-title')) {
+      return;
+    }
 
     // 재렌더링 - 현재 뷰 모드에 맞게 렌더링
     if (calendarViewMode) {
