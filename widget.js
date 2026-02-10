@@ -605,22 +605,7 @@ function renderPlannerCalendarHTML() {
       const targetTime = task.properties?.['목표 시간']?.number || 0;
       totalTarget += targetTime;
 
-      const end = task.properties?.['끝']?.rich_text?.[0]?.plain_text || '';
-      if (end) {
-        const actualProp = task.properties?.['실제 시간'];
-        if (actualProp?.type === 'formula') {
-          if (actualProp.formula?.type === 'number') {
-            totalActual += actualProp.formula.number || 0;
-          } else if (actualProp.formula?.type === 'string') {
-            const str = actualProp.formula.string || '';
-            const hourMatch = str.match(/(\d+)시간/);
-            const minMatch = str.match(/(\d+)분/);
-            const hours = hourMatch ? parseInt(hourMatch[1]) : 0;
-            const mins = minMatch ? parseInt(minMatch[1]) : 0;
-            totalActual += hours * 60 + mins;
-          }
-        }
-      }
+      totalActual += calcActualMinutes(task);
     });
 
     const totalDiff = totalActual - totalTarget;
@@ -2187,30 +2172,7 @@ function renderTimelineView() {
     const targetTime = task.properties?.['목표 시간']?.number || 0;
     totalTarget += targetTime;
 
-    const end = task.properties?.['끝']?.rich_text?.[0]?.plain_text || '';
-    if (end) {
-      const actualProp = task.properties?.['실제 시간'];
-      if (actualProp?.type === 'formula') {
-        if (actualProp.formula?.type === 'number') {
-          totalActual += actualProp.formula.number || 0;
-        } else if (actualProp.formula?.type === 'string') {
-          const str = actualProp.formula.string || '';
-        
-          // 1️⃣ 부호 먼저 확인
-          const sign = str.trim().startsWith('-') ? -1 : 1;
-        
-          // 2️⃣ 시간 / 분 파싱
-          const hourMatch = str.match(/(\d+)시간/);
-          const minMatch = str.match(/(\d+)분/);
-          const hours = hourMatch ? parseInt(hourMatch[1], 10) : 0;
-          const mins = minMatch ? parseInt(minMatch[1], 10) : 0;
-        
-          // 3️⃣ 부호 적용
-          totalActual += sign * (hours * 60 + mins);
-        }
-
-      }
-    }
+    totalActual += calcActualMinutes(task);
   });
 
   const totalDiff = totalActual - totalTarget;
@@ -2254,21 +2216,7 @@ function renderTimelineView() {
       let diffStr = '';
       
       if (end) {
-        const actualProp = task.properties?.['실제 시간'];
-        
-        if (actualProp?.type === 'formula') {
-          if (actualProp.formula?.type === 'number') {
-            actualTime = actualProp.formula.number || 0;
-          } else if (actualProp.formula?.type === 'string') {
-            const str = actualProp.formula.string || '';
-            const hourMatch = str.match(/(\d+)시간/);
-            const minMatch = str.match(/(\d+)분/);
-            const hours = hourMatch ? parseInt(hourMatch[1]) : 0;
-            const mins = minMatch ? parseInt(minMatch[1]) : 0;
-            actualTime = hours * 60 + mins;
-          }
-        }
-        
+        actualTime = calcActualMinutes(task);
         const diff = actualTime - targetTime;
         diffStr = diff === 0 ? '' : `${diff > 0 ? '+' : ''}${diff}`;
       }
@@ -2700,6 +2648,16 @@ function formatDateToLocalString(date) {
   const month = String(localDate.getMonth() + 1).padStart(2, '0');
   const day = String(localDate.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function calcActualMinutes(task) {
+  const start = task.properties?.['시작']?.rich_text?.[0]?.plain_text || '';
+  const end = task.properties?.['끝']?.rich_text?.[0]?.plain_text || '';
+  if (!start || !end) return 0;
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return 0;
+  return (eh * 60 + em) - (sh * 60 + sm);
 }
 
 function formatMinutesToTime(minutes) {
