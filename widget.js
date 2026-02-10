@@ -2635,6 +2635,7 @@ async function updateTaskOrder() {
 
   await Promise.all(updates);
   loading.textContent = '';
+  scheduleRenderData();
 }
 
 async function updateNotionPage(pageId, properties) {
