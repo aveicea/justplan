@@ -2420,9 +2420,47 @@ function renderTaskView() {
   initSortable();
 }
 
+function createAutoScroller(scrollEl) {
+  const EDGE_SIZE = 80;
+  const MAX_SPEED = 12;
+  let animFrame = null;
+  let clientY = 0;
+
+  function tick() {
+    const rect = scrollEl.getBoundingClientRect();
+    const relY = clientY - rect.top;
+    let speed = 0;
+
+    if (relY < EDGE_SIZE) {
+      speed = -MAX_SPEED * (1 - relY / EDGE_SIZE);
+    } else if (relY > rect.height - EDGE_SIZE) {
+      speed = MAX_SPEED * (1 - (rect.height - relY) / EDGE_SIZE);
+    }
+
+    if (speed !== 0) {
+      scrollEl.scrollTop += speed;
+    }
+    animFrame = requestAnimationFrame(tick);
+  }
+
+  return {
+    update(y) { clientY = y; },
+    start(y) {
+      clientY = y;
+      if (!animFrame) animFrame = requestAnimationFrame(tick);
+    },
+    stop() {
+      if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+    }
+  };
+}
+
 function initSortable() {
   const container = document.getElementById('task-sortable');
   if (!container) return;
+
+  const scrollEl = document.getElementById('content');
+  const autoScroller = createAutoScroller(scrollEl);
 
   let draggedItem = null;
   let dragStartIndex = -1;
@@ -2441,9 +2479,11 @@ function initSortable() {
       draggedItem = item;
       dragStartIndex = Array.from(container.children).indexOf(draggedItem);
       item.style.opacity = '0.5';
+      autoScroller.start(e.clientY);
     });
 
     handle.addEventListener('dragend', async (e) => {
+      autoScroller.stop();
       item.style.opacity = '1';
 
       const dragEndIndex = Array.from(container.children).indexOf(draggedItem);
@@ -2463,11 +2503,13 @@ function initSortable() {
       item.style.opacity = '0.5';
       item.style.position = 'relative';
       item.style.zIndex = '1000';
+      autoScroller.start(e.clientY);
       e.preventDefault();
     });
 
     document.addEventListener('mousemove', (e) => {
       if (!isMouseDragging || !draggedItem) return;
+      autoScroller.update(e.clientY);
       const afterElement = getDragAfterElement(container, e.clientY);
 
       if (afterElement == null) {
@@ -2480,6 +2522,7 @@ function initSortable() {
     document.addEventListener('mouseup', async (e) => {
       if (!isMouseDragging) return;
       isMouseDragging = false;
+      autoScroller.stop();
 
       if (draggedItem) {
         item.style.opacity = '1';
@@ -2504,11 +2547,13 @@ function initSortable() {
       item.style.opacity = '0.5';
       item.style.position = 'relative';
       item.style.zIndex = '1000';
+      autoScroller.start(e.touches[0].clientY);
     }, { passive: true });
 
     handle.addEventListener('touchmove', (e) => {
       e.preventDefault();
       touchCurrentY = e.touches[0].clientY;
+      autoScroller.update(touchCurrentY);
       const afterElement = getDragAfterElement(container, touchCurrentY);
 
       if (afterElement == null) {
@@ -2519,6 +2564,7 @@ function initSortable() {
     }, { passive: false });
 
     handle.addEventListener('touchend', async (e) => {
+      autoScroller.stop();
       item.style.opacity = '1';
       item.style.position = '';
       item.style.zIndex = '';
@@ -2535,6 +2581,7 @@ function initSortable() {
 
   container.addEventListener('dragover', (e) => {
     e.preventDefault();
+    autoScroller.update(e.clientY);
     const afterElement = getDragAfterElement(container, e.clientY);
     if (afterElement == null && draggedItem) {
       container.appendChild(draggedItem);
@@ -3585,6 +3632,9 @@ function initCalendarDragDrop() {
   const items = document.querySelectorAll('.calendar-item');
   const groups = document.querySelectorAll('.calendar-date-group');
 
+  const scrollEl = document.getElementById('content');
+  const autoScroller = createAutoScroller(scrollEl);
+
   let draggedItem = null;
   let touchStartY = 0;
   let touchCurrentY = 0;
@@ -3593,6 +3643,7 @@ function initCalendarDragDrop() {
   // 마우스 이벤트는 document 레벨에서 한 번만 등록
   const handleMouseMove = (e) => {
     if (!isMouseDragging || !draggedItem) return;
+    autoScroller.update(e.clientY);
 
     // 마우스 위치에 있는 그룹 찾기
     const touchedElement = document.elementFromPoint(e.clientX, e.clientY);
@@ -3610,6 +3661,7 @@ function initCalendarDragDrop() {
   const handleMouseUp = (e) => {
     if (!isMouseDragging) return;
     isMouseDragging = false;
+    autoScroller.stop();
 
     if (draggedItem) {
       draggedItem.style.opacity = '1';
@@ -3656,9 +3708,11 @@ function initCalendarDragDrop() {
     handle.addEventListener('dragstart', (e) => {
       draggedItem = item;
       item.style.opacity = '0.5';
+      autoScroller.start(e.clientY);
     });
 
     handle.addEventListener('dragend', (e) => {
+      autoScroller.stop();
       item.style.opacity = '1';
     });
 
@@ -3670,6 +3724,7 @@ function initCalendarDragDrop() {
       item.style.position = 'relative';
       item.style.zIndex = '1000';
       handle.style.cursor = 'grabbing';
+      autoScroller.start(e.clientY);
       e.preventDefault();
     });
 
@@ -3680,11 +3735,13 @@ function initCalendarDragDrop() {
       item.style.opacity = '0.5';
       item.style.position = 'relative';
       item.style.zIndex = '1000';
+      autoScroller.start(e.touches[0].clientY);
     }, { passive: true });
 
     handle.addEventListener('touchmove', (e) => {
       e.preventDefault();
       touchCurrentY = e.touches[0].clientY;
+      autoScroller.update(touchCurrentY);
 
       // 터치 위치에 있는 그룹 찾기
       const touchedElement = document.elementFromPoint(
@@ -3704,6 +3761,7 @@ function initCalendarDragDrop() {
     }, { passive: false });
 
     handle.addEventListener('touchend', (e) => {
+      autoScroller.stop();
       item.style.opacity = '1';
       item.style.position = '';
       item.style.zIndex = '';
@@ -3736,6 +3794,7 @@ function initCalendarDragDrop() {
   groups.forEach(group => {
     group.addEventListener('dragover', (e) => {
       e.preventDefault();
+      autoScroller.update(e.clientY);
       group.style.background = '#f0f0f0';
     });
 
@@ -3745,6 +3804,7 @@ function initCalendarDragDrop() {
 
     group.addEventListener('drop', (e) => {
       e.preventDefault();
+      autoScroller.stop();
       group.style.background = 'transparent';
 
       if (draggedItem) {
