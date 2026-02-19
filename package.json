@@ -1,0 +1,37 @@
+{
+  "name": "justplan-widget",
+  "version": "1.0.0",
+  "description": "JustPlan Notion Planner - macOS Desktop Widget",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac dmg"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0"
+  },
+  "build": {
+    "appId": "com.justplan.widget",
+    "productName": "JustPlan",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "widget.js",
+      "sparkles_2728.png",
+      "apple-touch-icon.jpg"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "sparkles_2728.png",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] }
+      ],
+      "darkModeSupport": true
+    }
+  }
+}
