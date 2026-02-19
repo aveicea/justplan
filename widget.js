@@ -3791,6 +3791,34 @@ function initCalendarDragDrop() {
     });
   });
 
+  // 아이템 위에 드롭해도 부모 그룹으로 위임
+  items.forEach(item => {
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      autoScroller.update(e.clientY);
+      const parentGroup = item.closest('.calendar-date-group');
+      groups.forEach(g => g.style.background = 'transparent');
+      if (parentGroup) parentGroup.style.background = '#f0f0f0';
+    });
+
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      autoScroller.stop();
+      const parentGroup = item.closest('.calendar-date-group');
+      groups.forEach(g => g.style.background = 'transparent');
+
+      if (parentGroup && draggedItem) {
+        const newDate = parentGroup.getAttribute('data-date');
+        const itemId = draggedItem.getAttribute('data-id');
+
+        draggedItem.setAttribute('data-date', newDate);
+        parentGroup.appendChild(draggedItem);
+
+        updateCalendarItemDate(itemId, newDate);
+      }
+    });
+  });
+
   groups.forEach(group => {
     group.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -3799,7 +3827,10 @@ function initCalendarDragDrop() {
     });
 
     group.addEventListener('dragleave', (e) => {
-      group.style.background = 'transparent';
+      // 자식 요소로 이동한 경우 배경 유지
+      if (!group.contains(e.relatedTarget)) {
+        group.style.background = 'transparent';
+      }
     });
 
     group.addEventListener('drop', (e) => {
