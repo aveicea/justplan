@@ -1791,7 +1791,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   fetchDDayData().then(() => {
     autoSelectClosestDDay();
     if (!document.getElementById('new-task-title') && !document.getElementById('edit-task-title')) {
-      renderData();
+      if (calendarViewMode) {
+        renderCalendarView();
+      } else {
+        renderData();
+      }
     }
   }).catch(err => {
     console.error('D-Day loading failed:', err);
@@ -1913,8 +1917,12 @@ async function fetchData(retryCount = 0) {
     // 책 이름 불러오기
     await fetchBookNames();
 
-    // 렌더링
-    renderData();
+    // 렌더링 - 현재 뷰 모드에 맞게
+    if (calendarViewMode) {
+      renderCalendarView();
+    } else {
+      renderData();
+    }
     updateLastUpdateTime();
     completeLoading('플래너 데이터 로드');
   } catch (error) {
