@@ -2422,7 +2422,7 @@ function renderTaskView() {
 
 function createAutoScroller(scrollEl) {
   const EDGE_SIZE = 80;
-  const MAX_SPEED = 12;
+  const MAX_SPEED = 4;
   let animFrame = null;
   let clientY = 0;
 
@@ -3646,6 +3646,7 @@ function initCalendarDragDrop() {
   // 마우스 이벤트는 document 레벨에서 한 번만 등록
   const handleMouseMove = (e) => {
     if (!isMouseDragging || !draggedItem) return;
+    e.preventDefault(); // 드래그 중 텍스트 선택 방지
     autoScroller.update(e.clientY);
 
     // 마우스 위치에 있는 그룹 찾기
@@ -3666,6 +3667,9 @@ function initCalendarDragDrop() {
     if (!isMouseDragging) return;
     isMouseDragging = false;
     autoScroller.stop();
+    // 텍스트 선택 복원
+    document.body.style.userSelect = '';
+    document.body.style.webkitUserSelect = '';
 
     if (draggedItem) {
       draggedItem.style.opacity = '1';
@@ -3731,6 +3735,9 @@ function initCalendarDragDrop() {
       item.style.position = 'relative';
       item.style.zIndex = '1000';
       handle.style.cursor = 'grabbing';
+      // 드래그 중 텍스트 선택 완전 차단
+      document.body.style.userSelect = 'none';
+      document.body.style.webkitUserSelect = 'none';
       autoScroller.start(e.clientY);
       e.preventDefault();
     });
