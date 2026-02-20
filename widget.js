@@ -2579,13 +2579,14 @@ function initSortable() {
     });
   });
 
-  container.addEventListener('dragover', (e) => {
+  document.addEventListener('dragover', (e) => {
     e.preventDefault();
+    if (!draggedItem) return;
     autoScroller.update(e.clientY);
     const afterElement = getDragAfterElement(container, e.clientY);
-    if (afterElement == null && draggedItem) {
+    if (afterElement == null) {
       container.appendChild(draggedItem);
-    } else if (draggedItem) {
+    } else {
       container.insertBefore(draggedItem, afterElement);
     }
   });
