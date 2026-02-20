@@ -2422,7 +2422,7 @@ function renderTaskView() {
 
 function createAutoScroller(scrollEl) {
   const EDGE_SIZE = 80;
-  const MAX_SPEED = 12;
+  const MAX_SPEED = 4;
   let animFrame = null;
   let clientY = 0;
 
