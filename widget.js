@@ -3575,7 +3575,7 @@ function renderCalendarView() {
     `;
 
     if (items.length === 0) {
-      html += `<div style="font-size: 11px; color: #999; padding: 8px;">일정 없음</div>`;
+      html += `<div class="calendar-empty-label" style="font-size: 11px; color: #999; padding: 8px;">일정 없음</div>`;
     } else {
       // 책이름으로 먼저 정렬, 같은 책 안에서 제목으로 정렬 (숫자는 자연스럽게)
       const sortedItems = items.sort((a, b) => {
@@ -3629,6 +3629,13 @@ function renderCalendarView() {
   initCalendarDragDrop();
 }
 
+function refreshCalendarEmptyLabel(group) {
+  const label = group.querySelector('.calendar-empty-label');
+  if (!label) return;
+  const hasItems = group.querySelectorAll('.calendar-item').length > 0;
+  label.style.display = hasItems ? 'none' : '';
+}
+
 function initCalendarDragDrop() {
   const items = document.querySelectorAll('.calendar-item');
   const groups = document.querySelectorAll('.calendar-date-group');
@@ -3643,6 +3650,7 @@ function initCalendarDragDrop() {
   // 드래그 중 마지막으로 하이라이트된 그룹 추적
   // (mouseup/touchend 시 elementFromPoint가 날짜 헤더 등을 반환해 null이 되는 경우 fallback)
   let currentTargetGroup = null;
+  let sourceGroup = null;
 
   // 마우스 이벤트는 document 레벨에서 한 번만 등록
   const handleMouseMove = (e) => {
@@ -3659,8 +3667,16 @@ function initCalendarDragDrop() {
 
     // 현재 그룹 하이라이트 + 추적
     if (targetGroup) {
+      // 이전 그룹이 다르면 빈 레이블 복원, 새 그룹은 즉시 숨김
+      if (currentTargetGroup && currentTargetGroup !== targetGroup) {
+        refreshCalendarEmptyLabel(currentTargetGroup);
+      }
+      const label = targetGroup.querySelector('.calendar-empty-label');
+      if (label) label.style.display = 'none';
       targetGroup.style.background = '#f0f0f0';
       currentTargetGroup = targetGroup;
+    } else if (currentTargetGroup) {
+      refreshCalendarEmptyLabel(currentTargetGroup);
     }
   };
 
@@ -3691,6 +3707,11 @@ function initCalendarDragDrop() {
         draggedItem.setAttribute('data-date', newDate);
         targetGroup.appendChild(draggedItem);
 
+        // 이동 후: 타겟 그룹 레이블 숨김, 소스 그룹 레이블 복원
+        const label = targetGroup.querySelector('.calendar-empty-label');
+        if (label) label.style.display = 'none';
+        if (sourceGroup && sourceGroup !== targetGroup) refreshCalendarEmptyLabel(sourceGroup);
+
         updateCalendarItemDate(itemId, newDate);
       }
 
@@ -3698,6 +3719,7 @@ function initCalendarDragDrop() {
       groups.forEach(g => g.style.background = 'transparent');
 
       currentTargetGroup = null;
+      sourceGroup = null;
       draggedItem = null;
     }
   };
@@ -3718,6 +3740,7 @@ function initCalendarDragDrop() {
     handle.addEventListener('dragstart', (e) => {
       draggedItem = item;
       currentTargetGroup = null;
+      sourceGroup = item.closest('.calendar-date-group');
       item.style.opacity = '0.5';
       autoScroller.start(e.clientY);
     });
@@ -3732,6 +3755,7 @@ function initCalendarDragDrop() {
       isMouseDragging = true;
       draggedItem = item;
       currentTargetGroup = null;
+      sourceGroup = item.closest('.calendar-date-group');
       item.style.opacity = '0.5';
       item.style.position = 'relative';
       item.style.zIndex = '1000';
@@ -3747,6 +3771,7 @@ function initCalendarDragDrop() {
     handle.addEventListener('touchstart', (e) => {
       draggedItem = item;
       currentTargetGroup = null;
+      sourceGroup = item.closest('.calendar-date-group');
       touchStartY = e.touches[0].clientY;
       item.style.opacity = '0.5';
       item.style.position = 'relative';
@@ -3772,8 +3797,15 @@ function initCalendarDragDrop() {
 
       // 현재 그룹 하이라이트 + 추적
       if (targetGroup) {
+        if (currentTargetGroup && currentTargetGroup !== targetGroup) {
+          refreshCalendarEmptyLabel(currentTargetGroup);
+        }
+        const label = targetGroup.querySelector('.calendar-empty-label');
+        if (label) label.style.display = 'none';
         targetGroup.style.background = '#f0f0f0';
         currentTargetGroup = targetGroup;
+      } else if (currentTargetGroup) {
+        refreshCalendarEmptyLabel(currentTargetGroup);
       }
     }, { passive: false });
 
@@ -3798,6 +3830,11 @@ function initCalendarDragDrop() {
         draggedItem.setAttribute('data-date', newDate);
         targetGroup.appendChild(draggedItem);
 
+        // 이동 후: 타겟 그룹 레이블 숨김, 소스 그룹 레이블 복원
+        const label = targetGroup.querySelector('.calendar-empty-label');
+        if (label) label.style.display = 'none';
+        if (sourceGroup && sourceGroup !== targetGroup) refreshCalendarEmptyLabel(sourceGroup);
+
         updateCalendarItemDate(itemId, newDate);
       }
 
@@ -3805,6 +3842,7 @@ function initCalendarDragDrop() {
       groups.forEach(g => g.style.background = 'transparent');
 
       currentTargetGroup = null;
+      sourceGroup = null;
       draggedItem = null;
     });
   });
@@ -3815,6 +3853,11 @@ function initCalendarDragDrop() {
       autoScroller.update(e.clientY);
       groups.forEach(g => g.style.background = 'transparent');
       group.style.background = '#f0f0f0';
+      if (currentTargetGroup && currentTargetGroup !== group) {
+        refreshCalendarEmptyLabel(currentTargetGroup);
+      }
+      const label = group.querySelector('.calendar-empty-label');
+      if (label) label.style.display = 'none';
       currentTargetGroup = group;
     });
 
@@ -3822,6 +3865,7 @@ function initCalendarDragDrop() {
       // 자식 요소로 이동한 경우 배경 유지
       if (!group.contains(e.relatedTarget)) {
         group.style.background = 'transparent';
+        refreshCalendarEmptyLabel(group);
       }
     });
 
@@ -3837,6 +3881,12 @@ function initCalendarDragDrop() {
 
         draggedItem.setAttribute('data-date', newDate);
         group.appendChild(draggedItem);
+
+        // 이동 후: 타겟 그룹 레이블 숨김, 소스 그룹 레이블 복원
+        const label = group.querySelector('.calendar-empty-label');
+        if (label) label.style.display = 'none';
+        if (sourceGroup && sourceGroup !== group) refreshCalendarEmptyLabel(sourceGroup);
+        sourceGroup = null;
 
         updateCalendarItemDate(itemId, newDate);
       }
