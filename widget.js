@@ -2713,7 +2713,10 @@ function calcActualMinutes(task) {
   const [sh, sm] = start.split(':').map(Number);
   const [eh, em] = end.split(':').map(Number);
   if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return 0;
-  return (eh * 60 + em) - (sh * 60 + sm);
+  let endMinutes = eh * 60 + em;
+  const startMinutes = sh * 60 + sm;
+  if (endMinutes < startMinutes) endMinutes += 24 * 60;
+  return endMinutes - startMinutes;
 }
 
 function formatMinutesToTime(minutes) {
