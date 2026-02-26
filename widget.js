@@ -2314,8 +2314,17 @@ function renderTaskView() {
 
   const sortByPriority = (tasks) => {
     return tasks.sort((a, b) => {
-      const aPriority = a.properties?.['우선순위']?.select?.name || '10th';
-      const bPriority = b.properties?.['우선순위']?.select?.name || '10th';
+      const aPriority = a.properties?.['우선순위']?.select?.name;
+      const bPriority = b.properties?.['우선순위']?.select?.name;
+
+      // 둘 다 우선순위 없음 → 가나다순
+      if (!aPriority && !bPriority) {
+        return getTaskTitle(a).localeCompare(getTaskTitle(b), 'ko');
+      }
+      // 하나만 우선순위 없음 → 우선순위 있는 게 먼저
+      if (!aPriority) return 1;
+      if (!bPriority) return -1;
+
       return priorityOrder.indexOf(aPriority) - priorityOrder.indexOf(bPriority);
     });
   };
