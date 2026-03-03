@@ -3610,10 +3610,8 @@ function renderCalendarView() {
     if (items.length === 0) {
       html += `<div class="calendar-empty-label" style="font-size: 11px; color: #999; padding: 8px;">일정 없음</div>`;
     } else {
-      const isPastDate = dateStr < today;
-
       // 책이름으로 먼저 정렬, 같은 책 안에서 제목으로 정렬 (숫자는 자연스럽게)
-      const sortByBook = (arr) => arr.sort((a, b) => {
+      const sortedItems = items.sort((a, b) => {
         const titleA = getCalendarItemTitle(a);
         const titleB = getCalendarItemTitle(b);
         const bookRelationA = a.properties?.['책']?.relation?.[0];
@@ -3628,17 +3626,6 @@ function renderCalendarView() {
         // 2. 같은 책이면 제목으로 정렬 (숫자 자연스럽게)
         return titleA.localeCompare(titleB, 'ko', { numeric: true });
       });
-
-      let sortedItems;
-      if (isPastDate) {
-        // 과거 날짜: 그냥 책/제목 순 정렬
-        sortedItems = sortByBook(items);
-      } else {
-        // 오늘/미래: 안한 일 먼저, 그 다음 완료한 일
-        const incomplete = items.filter(t => !t.properties?.['완료']?.checkbox);
-        const completed = items.filter(t => t.properties?.['완료']?.checkbox);
-        sortedItems = [...sortByBook(incomplete), ...sortByBook(completed)];
-      }
 
       sortedItems.forEach(item => {
         const title = getCalendarItemTitle(item);
