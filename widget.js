@@ -256,10 +256,13 @@ function scheduleRenderData() {
   function tryRender() {
     const hasModalOpen = document.getElementById('new-task-title') || document.getElementById('edit-task-title');
     const active = document.activeElement;
-    const isEditingInline = !hasModalOpen && active && active.tagName === 'INPUT' && active.type === 'text';
+    const isEditingInline = !hasModalOpen && active && (
+      (active.tagName === 'INPUT' && active.type === 'text') ||
+      active.tagName === 'SELECT'
+    );
 
     if (hasModalOpen || isEditingInline) {
-      // 인라인 텍스트 입력 중이면 200ms 후 재시도 (키보드/포커스 날아가는 현상 방지)
+      // 인라인 입력(시간 텍스트, 별점 셀렉트 등) 사용 중이면 200ms 후 재시도 (포커스 날아가는 현상 방지)
       renderDataTimer = setTimeout(tryRender, 200);
       return;
     }
