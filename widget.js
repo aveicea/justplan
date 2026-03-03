@@ -253,12 +253,23 @@ function scheduleRenderData() {
   if (renderDataTimer) {
     clearTimeout(renderDataTimer);
   }
-  renderDataTimer = setTimeout(() => {
-    if (!document.getElementById('new-task-title') && !document.getElementById('edit-task-title')) {
-      renderData();
+  function tryRender() {
+    const hasModalOpen = document.getElementById('new-task-title') || document.getElementById('edit-task-title');
+    const active = document.activeElement;
+    const isEditingInline = !hasModalOpen && active && (
+      (active.tagName === 'INPUT' && active.type === 'text') ||
+      active.tagName === 'SELECT'
+    );
+
+    if (hasModalOpen || isEditingInline) {
+      // 인라인 입력(시간 텍스트, 별점 셀렉트 등) 사용 중이면 200ms 후 재시도 (포커스 날아가는 현상 방지)
+      renderDataTimer = setTimeout(tryRender, 200);
+      return;
     }
+    renderData();
     renderDataTimer = null;
-  }, 300); // 0.3초 후 렌더링
+  }
+  renderDataTimer = setTimeout(tryRender, 300);
 }
 
 // 전역 함수 등록
