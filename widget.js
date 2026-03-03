@@ -28,6 +28,8 @@ const MAX_HISTORY = 50; // 최대 히스토리 개수
 let loadingLogs = []; // 로딩 로그 {message: string, status: 'loading'|'completed'}
 let loadingCount = 0; // 진행중인 작업 수
 let pendingUpdates = 0; // 진행 중인 업데이트 API 수
+let _calendarMouseMove = null; // initCalendarDragDrop 리스너 누적 방지용
+let _calendarMouseUp = null;
 let needsRefresh = false; // fetchAllData 필요 여부
 let editTaskReturnView = 'planner'; // editTask 호출 시 돌아갈 뷰 ('planner' | 'list')
 let addTaskReturnView = 'planner'; // addTask 호출 시 돌아갈 뷰 ('planner' | 'list')
@@ -3685,8 +3687,8 @@ function initCalendarDragDrop() {
     // 모든 그룹 하이라이트 제거
     groups.forEach(g => g.style.background = 'transparent');
 
-    // 현재 그룹 하이라이트 + 추적
-    if (targetGroup) {
+    // 소스 그룹이 아닌 유효한 그룹에만 하이라이트 + 추적
+    if (targetGroup && targetGroup !== sourceGroup) {
       // 이전 그룹이 다르면 빈 레이블 복원, 새 그룹은 즉시 숨김
       if (currentTargetGroup && currentTargetGroup !== targetGroup) {
         refreshCalendarEmptyLabel(currentTargetGroup);
@@ -3720,7 +3722,7 @@ function initCalendarDragDrop() {
       const touchedElement = document.elementFromPoint(e.clientX, e.clientY);
       const targetGroup = touchedElement?.closest('.calendar-date-group') || currentTargetGroup;
 
-      if (targetGroup && draggedItem) {
+      if (targetGroup && draggedItem && targetGroup !== sourceGroup) {
         const newDate = targetGroup.getAttribute('data-date');
         const itemId = draggedItem.getAttribute('data-id');
 
@@ -3730,7 +3732,7 @@ function initCalendarDragDrop() {
         // 이동 후: 타겟 그룹 레이블 숨김, 소스 그룹 레이블 복원
         const label = targetGroup.querySelector('.calendar-empty-label');
         if (label) label.style.display = 'none';
-        if (sourceGroup && sourceGroup !== targetGroup) refreshCalendarEmptyLabel(sourceGroup);
+        if (sourceGroup) refreshCalendarEmptyLabel(sourceGroup);
 
         updateCalendarItemDate(itemId, newDate);
       }
@@ -3744,9 +3746,11 @@ function initCalendarDragDrop() {
     }
   };
 
-  // 기존 리스너 제거 후 새로 등록
-  document.removeEventListener('mousemove', handleMouseMove);
-  document.removeEventListener('mouseup', handleMouseUp);
+  // 이전 리스너 제거 후 새로 등록 (누적 방지)
+  if (_calendarMouseMove) document.removeEventListener('mousemove', _calendarMouseMove);
+  if (_calendarMouseUp) document.removeEventListener('mouseup', _calendarMouseUp);
+  _calendarMouseMove = handleMouseMove;
+  _calendarMouseUp = handleMouseUp;
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseup', handleMouseUp);
 
@@ -3815,8 +3819,8 @@ function initCalendarDragDrop() {
       // 모든 그룹 하이라이트 제거
       groups.forEach(g => g.style.background = 'transparent');
 
-      // 현재 그룹 하이라이트 + 추적
-      if (targetGroup) {
+      // 소스 그룹이 아닌 유효한 그룹에만 하이라이트 + 추적
+      if (targetGroup && targetGroup !== sourceGroup) {
         if (currentTargetGroup && currentTargetGroup !== targetGroup) {
           refreshCalendarEmptyLabel(currentTargetGroup);
         }
@@ -3843,7 +3847,7 @@ function initCalendarDragDrop() {
 
       const targetGroup = touchedElement?.closest('.calendar-date-group') || currentTargetGroup;
 
-      if (targetGroup && draggedItem) {
+      if (targetGroup && draggedItem && targetGroup !== sourceGroup) {
         const newDate = targetGroup.getAttribute('data-date');
         const itemId = draggedItem.getAttribute('data-id');
 
@@ -3853,7 +3857,7 @@ function initCalendarDragDrop() {
         // 이동 후: 타겟 그룹 레이블 숨김, 소스 그룹 레이블 복원
         const label = targetGroup.querySelector('.calendar-empty-label');
         if (label) label.style.display = 'none';
-        if (sourceGroup && sourceGroup !== targetGroup) refreshCalendarEmptyLabel(sourceGroup);
+        if (sourceGroup) refreshCalendarEmptyLabel(sourceGroup);
 
         updateCalendarItemDate(itemId, newDate);
       }
@@ -3872,13 +3876,16 @@ function initCalendarDragDrop() {
       e.preventDefault();
       autoScroller.update(e.clientY);
       groups.forEach(g => g.style.background = 'transparent');
-      group.style.background = '#f0f0f0';
-      if (currentTargetGroup && currentTargetGroup !== group) {
-        refreshCalendarEmptyLabel(currentTargetGroup);
+      // 소스 그룹은 하이라이트하지 않음
+      if (group !== sourceGroup) {
+        group.style.background = '#f0f0f0';
+        if (currentTargetGroup && currentTargetGroup !== group) {
+          refreshCalendarEmptyLabel(currentTargetGroup);
+        }
+        const label = group.querySelector('.calendar-empty-label');
+        if (label) label.style.display = 'none';
+        currentTargetGroup = group;
       }
-      const label = group.querySelector('.calendar-empty-label');
-      if (label) label.style.display = 'none';
-      currentTargetGroup = group;
     });
 
     group.addEventListener('dragleave', (e) => {
@@ -3895,7 +3902,7 @@ function initCalendarDragDrop() {
       groups.forEach(g => g.style.background = 'transparent');
       currentTargetGroup = null;
 
-      if (draggedItem) {
+      if (draggedItem && group !== sourceGroup) {
         const newDate = group.getAttribute('data-date');
         const itemId = draggedItem.getAttribute('data-id');
 
@@ -3905,7 +3912,7 @@ function initCalendarDragDrop() {
         // 이동 후: 타겟 그룹 레이블 숨김, 소스 그룹 레이블 복원
         const label = group.querySelector('.calendar-empty-label');
         if (label) label.style.display = 'none';
-        if (sourceGroup && sourceGroup !== group) refreshCalendarEmptyLabel(sourceGroup);
+        if (sourceGroup) refreshCalendarEmptyLabel(sourceGroup);
         sourceGroup = null;
 
         updateCalendarItemDate(itemId, newDate);
