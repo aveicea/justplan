@@ -364,8 +364,10 @@ window.toggleDDaySelector = async function() {
     </div>
     <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
       <button onclick="syncToGoogleCalendar()" style="width: 100%; padding: 8px; background: white; color: #333; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px;">📅 Google Calendar 동기화</button>
-      <button onclick="localStorage.removeItem('gcal_calendar_id'); localStorage.removeItem('gcal_sync_map'); alert('캘린더 설정이 초기화됐습니다. 다시 동기화 버튼을 누르면 캘린더를 선택할 수 있습니다.');" style="width: 100%; padding: 8px; background: white; color: #999; border: 1px solid #eee; border-radius: 4px; cursor: pointer; font-size: 12px;">🔄 캘린더 연결 초기화</button>
       <button onclick="ddaySelectorOpen=false; renderData()" style="width: 100%; padding: 8px; background: #999; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">닫기</button>
+    </div>
+    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee;">
+      <button onclick="localStorage.removeItem('gcal_calendar_id'); localStorage.removeItem('gcal_sync_map'); alert('캘린더 설정이 초기화됐습니다. 다시 동기화 버튼을 누르면 캘린더를 선택할 수 있습니다.');" style="width: 100%; padding: 7px; background: white; color: #bbb; border: 1px solid #eee; border-radius: 4px; cursor: pointer; font-size: 12px;">캘린더 연결 초기화</button>
     </div>
   `;
 
