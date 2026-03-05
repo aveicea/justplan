@@ -4060,10 +4060,17 @@ async function doSync(accessToken, calendarId, silent = false) {
     const bookRelation = item.properties?.['책']?.relation?.[0];
     const bookName = bookRelation && bookNames[bookRelation.id] ? bookNames[bookRelation.id] : '';
     const summary = bookName ? `📖 공부 | [${bookName}] ${title}` : `📖 공부 | ${title}`;
+    // 00~06시 일정은 Google Calendar에서 다음날 날짜로 표시 (시간은 그대로)
+    const startHour = parseInt(start.padStart(5, '0').split(':')[0], 10);
+    const gcalDate = startHour < 6 ? (() => {
+      const d = new Date(dateStr + 'T00:00:00');
+      d.setDate(d.getDate() + 1);
+      return d.toISOString().slice(0, 10);
+    })() : dateStr;
     notionItems.set(item.id, {
       summary,
-      start: { dateTime: `${dateStr}T${start.padStart(5,'0')}:00`, timeZone },
-      end:   { dateTime: `${dateStr}T${end.padStart(5,'0')}:00`,   timeZone },
+      start: { dateTime: `${gcalDate}T${start.padStart(5,'0')}:00`, timeZone },
+      end:   { dateTime: `${gcalDate}T${end.padStart(5,'0')}:00`,   timeZone },
     });
   }
 
