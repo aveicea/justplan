@@ -3966,11 +3966,27 @@ function requestGCalToken(prompt = '', onSuccess, onError) {
   }).requestAccessToken({ prompt });
 }
 
-async function getGCalToken() {
+async function getGCalToken(showPopup = true) {
   const cached = getCachedToken();
   if (cached) return cached;
+  // 먼저 팝업 없이 조용히 갱신 시도 (브라우저에 Google 세션이 있으면 성공)
   return new Promise((resolve, reject) => {
-    requestGCalToken('', resolve, reject);
+    google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+      callback: (res) => {
+        if (!res.error) {
+          _gcalToken = res.access_token;
+          _gcalTokenExpiry = Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000);
+          resolve(res.access_token);
+        } else if (showPopup) {
+          // 조용한 갱신 실패 → 팝업으로 재시도 (최초 로그인 또는 세션 만료)
+          requestGCalToken('', resolve, reject);
+        } else {
+          reject(res.error);
+        }
+      },
+    }).requestAccessToken({ prompt: 'none' });
   });
 }
 
