@@ -3944,6 +3944,36 @@ function initCalendarDragDrop() {
 
 const GOOGLE_CLIENT_ID = '819141705912-ivusnurnoq47ro3i913um4qelmt31jf2.apps.googleusercontent.com';
 
+// 토큰 캐시 (메모리, 만료 시 자동 재요청)
+let _gcalToken = null;
+let _gcalTokenExpiry = 0;
+
+function getCachedToken() {
+  if (_gcalToken && Date.now() < _gcalTokenExpiry - 60000) return _gcalToken; // 만료 1분 전부터 갱신
+  return null;
+}
+
+function requestGCalToken(prompt = '', onSuccess, onError) {
+  google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+    callback: (res) => {
+      if (res.error) { onError && onError(res.error); return; }
+      _gcalToken = res.access_token;
+      _gcalTokenExpiry = Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000);
+      onSuccess(res.access_token);
+    },
+  }).requestAccessToken({ prompt });
+}
+
+async function getGCalToken() {
+  const cached = getCachedToken();
+  if (cached) return cached;
+  return new Promise((resolve, reject) => {
+    requestGCalToken('', resolve, reject);
+  });
+}
+
 // localStorage: { notionPageId: googleEventId, ... }
 function getGCalSyncMap() {
   return JSON.parse(localStorage.getItem('gcal_sync_map') || '{}');
@@ -3955,25 +3985,15 @@ function saveGCalSyncMap(map) {
 window.syncToGoogleCalendar = async function() {
   startLoading('Google Calendar 동기화');
   try {
-    google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
-      callback: async (res) => {
-        if (res.error) {
-          alert('Google 인증 실패: ' + res.error);
-          completeLoading('Google Calendar 동기화 실패');
-          return;
-        }
-        const calendarId = localStorage.getItem('gcal_calendar_id');
-        if (calendarId) {
-          await doSync(res.access_token, calendarId);
-        } else {
-          await showCalendarPicker(res.access_token);
-        }
-      },
-    }).requestAccessToken();
+    const accessToken = await getGCalToken();
+    const calendarId = localStorage.getItem('gcal_calendar_id');
+    if (calendarId) {
+      await doSync(accessToken, calendarId);
+    } else {
+      await showCalendarPicker(accessToken);
+    }
   } catch (err) {
-    alert('Google 로그인 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.');
+    alert('Google 인증 실패. 새로고침 후 다시 시도해 주세요.');
     completeLoading('Google Calendar 동기화 실패');
   }
 };
@@ -4026,18 +4046,9 @@ async function autoSyncToGoogleCalendar() {
   if (!calendarId) return;
   try {
     if (typeof google === 'undefined' || !google.accounts) return;
-    await new Promise((resolve) => {
-      google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
-        callback: async (res) => {
-          if (!res.error) {
-            await doSync(res.access_token, calendarId, true);
-          }
-          resolve();
-        },
-      }).requestAccessToken({ prompt: '' });
-    });
+    const cached = getCachedToken();
+    if (!cached) return; // 캐시된 토큰 없으면 자동 동기화 스킵 (팝업 띄우지 않음)
+    await doSync(cached, calendarId, true);
   } catch (e) {
     // 자동 동기화 실패 - 무시
   }
