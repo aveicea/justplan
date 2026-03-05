@@ -3960,24 +3960,14 @@ window.syncToGoogleCalendar = async function() {
   try {
     google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/calendar.events',
+      scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
       callback: async (res) => {
         if (res.error) {
           alert('Google 인증 실패: ' + res.error);
           completeLoading('Google Calendar 동기화 실패');
           return;
         }
-        let ok = 0, fail = 0;
-        for (const event of events) {
-          const r = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${res.access_token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(event),
-          });
-          r.ok ? ok++ : fail++;
-        }
-        completeLoading('Google Calendar 동기화');
-        alert(fail === 0 ? `✅ ${ok}개 일정을 Google Calendar에 추가했습니다.` : `완료 (성공 ${ok} / 실패 ${fail})`);
+        await showCalendarPicker(res.access_token, events);
       },
     }).requestAccessToken();
   } catch (err) {
@@ -3985,3 +3975,63 @@ window.syncToGoogleCalendar = async function() {
     completeLoading('Google Calendar 동기화 실패');
   }
 };
+
+async function showCalendarPicker(accessToken, events) {
+  // 캘린더 목록 가져오기
+  const listRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  });
+  if (!listRes.ok) {
+    alert('캘린더 목록을 불러오지 못했습니다.');
+    completeLoading('Google Calendar 동기화 실패');
+    return;
+  }
+  const { items: calendars } = await listRes.json();
+
+  // 기존 패널이 있으면 제거
+  document.getElementById('gcal-picker')?.remove();
+
+  // 캘린더 선택 패널 생성
+  const panel = document.createElement('div');
+  panel.id = 'gcal-picker';
+  panel.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;border:1px solid #ddd;border-radius:10px;padding:20px;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.15);width:300px;max-height:80vh;overflow-y:auto;';
+
+  const savedId = localStorage.getItem('gcal_calendar_id');
+
+  panel.innerHTML = `
+    <div style="font-weight:600;margin-bottom:12px;font-size:14px;">캘린더 선택</div>
+    ${calendars.filter(c => c.accessRole === 'owner' || c.accessRole === 'writer').map(c => `
+      <label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;cursor:pointer;margin-bottom:4px;background:${savedId === c.id ? '#f0f7ff' : 'white'};">
+        <input type="radio" name="gcal" value="${c.id}" ${savedId === c.id || (!savedId && c.primary) ? 'checked' : ''}>
+        <span style="width:10px;height:10px;border-radius:50%;background:${c.backgroundColor || '#4285f4'};flex-shrink:0;"></span>
+        <span style="font-size:13px;">${c.summary}</span>
+      </label>
+    `).join('')}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+      <button onclick="document.getElementById('gcal-picker').remove()" style="padding:6px 12px;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;font-size:12px;">취소</button>
+      <button id="gcal-confirm-btn" style="padding:6px 12px;background:#4285f4;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">동기화</button>
+    </div>
+  `;
+  document.body.appendChild(panel);
+
+  document.getElementById('gcal-confirm-btn').onclick = async () => {
+    const calendarId = panel.querySelector('input[name="gcal"]:checked')?.value;
+    if (!calendarId) return;
+    localStorage.setItem('gcal_calendar_id', calendarId);
+    panel.remove();
+
+    let ok = 0, fail = 0;
+    for (const event of events) {
+      const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(event),
+      });
+      r.ok ? ok++ : fail++;
+    }
+    completeLoading('Google Calendar 동기화');
+    alert(fail === 0 ? `✅ ${ok}개 일정을 추가했습니다.` : `완료 (성공 ${ok} / 실패 ${fail})`);
+  };
+
+  completeLoading('Google Calendar 동기화');
+}
