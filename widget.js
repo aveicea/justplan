@@ -3934,34 +3934,9 @@ function initCalendarDragDrop() {
 
 // ─── Google Calendar 동기화 ───────────────────────────────────────────────────
 
-window.toggleGCalSettings = function() {
-  const panel = document.getElementById('gcal-settings-panel');
-  const overlay = document.getElementById('gcal-settings-overlay');
-  const isOpen = panel.style.display !== 'none';
-  panel.style.display = isOpen ? 'none' : 'block';
-  overlay.style.display = isOpen ? 'none' : 'block';
-  if (!isOpen) {
-    const input = document.getElementById('gcal-client-id-input');
-    input.value = localStorage.getItem('gcal_client_id') || '';
-    input.focus();
-  }
-};
-
-window.saveGCalClientId = function() {
-  const val = document.getElementById('gcal-client-id-input').value.trim();
-  if (val) {
-    localStorage.setItem('gcal_client_id', val);
-    toggleGCalSettings();
-  }
-};
+const GOOGLE_CLIENT_ID = '819141705912-ivusnurnoq47ro3i913um4qelmt31jf2.apps.googleusercontent.com';
 
 window.syncToGoogleCalendar = async function() {
-  const clientId = localStorage.getItem('gcal_client_id');
-  if (!clientId) {
-    toggleGCalSettings();
-    return;
-  }
-
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul';
   const events = (currentData?.results || []).map(item => {
     const title   = item.properties?.['범위']?.title?.[0]?.plain_text;
@@ -3983,8 +3958,8 @@ window.syncToGoogleCalendar = async function() {
 
   startLoading('Google Calendar 동기화');
   try {
-    const tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
+    google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
       scope: 'https://www.googleapis.com/auth/calendar.events',
       callback: async (res) => {
         if (res.error) {
@@ -4004,8 +3979,7 @@ window.syncToGoogleCalendar = async function() {
         completeLoading('Google Calendar 동기화');
         alert(fail === 0 ? `✅ ${ok}개 일정을 Google Calendar에 추가했습니다.` : `완료 (성공 ${ok} / 실패 ${fail})`);
       },
-    });
-    tokenClient.requestAccessToken();
+    }).requestAccessToken();
   } catch (err) {
     alert('Google 로그인 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.');
     completeLoading('Google Calendar 동기화 실패');
