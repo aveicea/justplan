@@ -2014,6 +2014,9 @@ async function fetchAllData() {
     } else {
       renderData();
     }
+
+    // Google Calendar 자동 동기화 (캘린더가 설정된 경우에만)
+    autoSyncToGoogleCalendar();
   } catch (error) {
     console.error('전체 데이터 로드 실패:', error);
   }
@@ -4014,7 +4017,29 @@ async function showCalendarPicker(accessToken) {
   completeLoading('Google Calendar 동기화');
 }
 
-async function doSync(accessToken, calendarId) {
+async function autoSyncToGoogleCalendar() {
+  const calendarId = localStorage.getItem('gcal_calendar_id');
+  if (!calendarId) return;
+  try {
+    if (typeof google === 'undefined' || !google.accounts) return;
+    await new Promise((resolve) => {
+      google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+        callback: async (res) => {
+          if (!res.error) {
+            await doSync(res.access_token, calendarId, true);
+          }
+          resolve();
+        },
+      }).requestAccessToken({ prompt: '' });
+    });
+  } catch (e) {
+    // 자동 동기화 실패 - 무시
+  }
+}
+
+async function doSync(accessToken, calendarId, silent = false) {
   startLoading('Google Calendar 동기화');
 
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul';
@@ -4029,8 +4054,11 @@ async function doSync(accessToken, calendarId) {
     const start   = item.properties?.['시작']?.rich_text?.[0]?.plain_text?.trim();
     const end     = item.properties?.['끝']?.rich_text?.[0]?.plain_text?.trim();
     if (!title || !dateStr || !start || !end) continue;
+    const bookRelation = item.properties?.['책']?.relation?.[0];
+    const bookName = bookRelation && bookNames[bookRelation.id] ? bookNames[bookRelation.id] : '';
+    const summary = bookName ? `[${bookName}] ${title}` : title;
     notionItems.set(item.id, {
-      summary: title,
+      summary,
       start: { dateTime: `${dateStr}T${start.padStart(5,'0')}:00`, timeZone },
       end:   { dateTime: `${dateStr}T${end.padStart(5,'0')}:00`,   timeZone },
     });
@@ -4081,10 +4109,12 @@ async function doSync(accessToken, calendarId) {
   saveGCalSyncMap(syncMap);
   completeLoading('Google Calendar 동기화');
 
-  const msg = [`✅ 동기화 완료`];
-  if (created) msg.push(`추가 ${created}개`);
-  if (updated) msg.push(`수정 ${updated}개`);
-  if (deleted) msg.push(`삭제 ${deleted}개`);
-  if (failed)  msg.push(`실패 ${failed}개`);
-  alert(msg.join('\n'));
+  if (!silent) {
+    const msg = [`✅ 동기화 완료`];
+    if (created) msg.push(`추가 ${created}개`);
+    if (updated) msg.push(`수정 ${updated}개`);
+    if (deleted) msg.push(`삭제 ${deleted}개`);
+    if (failed)  msg.push(`실패 ${failed}개`);
+    alert(msg.join('\n'));
+  }
 }
