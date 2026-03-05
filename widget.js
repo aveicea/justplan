@@ -3936,26 +3936,15 @@ function initCalendarDragDrop() {
 
 const GOOGLE_CLIENT_ID = '819141705912-ivusnurnoq47ro3i913um4qelmt31jf2.apps.googleusercontent.com';
 
+// localStorage: { notionPageId: googleEventId, ... }
+function getGCalSyncMap() {
+  return JSON.parse(localStorage.getItem('gcal_sync_map') || '{}');
+}
+function saveGCalSyncMap(map) {
+  localStorage.setItem('gcal_sync_map', JSON.stringify(map));
+}
+
 window.syncToGoogleCalendar = async function() {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul';
-  const events = (currentData?.results || []).map(item => {
-    const title   = item.properties?.['범위']?.title?.[0]?.plain_text;
-    const dateStr = item.properties?.['날짜']?.date?.start;
-    const start   = item.properties?.['시작']?.rich_text?.[0]?.plain_text?.trim();
-    const end     = item.properties?.['끝']?.rich_text?.[0]?.plain_text?.trim();
-    if (!title || !dateStr || !start || !end) return null;
-    return {
-      summary: title,
-      start: { dateTime: `${dateStr}T${start.padStart(5,'0')}:00`, timeZone },
-      end:   { dateTime: `${dateStr}T${end.padStart(5,'0')}:00`,   timeZone },
-    };
-  }).filter(Boolean);
-
-  if (events.length === 0) {
-    alert('동기화할 항목이 없습니다.\n시작·끝 시간이 모두 입력된 항목만 동기화됩니다.');
-    return;
-  }
-
   startLoading('Google Calendar 동기화');
   try {
     google.accounts.oauth2.initTokenClient({
@@ -3967,7 +3956,12 @@ window.syncToGoogleCalendar = async function() {
           completeLoading('Google Calendar 동기화 실패');
           return;
         }
-        await showCalendarPicker(res.access_token, events);
+        const calendarId = localStorage.getItem('gcal_calendar_id');
+        if (calendarId) {
+          await doSync(res.access_token, calendarId);
+        } else {
+          await showCalendarPicker(res.access_token);
+        }
       },
     }).requestAccessToken();
   } catch (err) {
@@ -3976,8 +3970,7 @@ window.syncToGoogleCalendar = async function() {
   }
 };
 
-async function showCalendarPicker(accessToken, events) {
-  // 캘린더 목록 가져오기
+async function showCalendarPicker(accessToken) {
   const listRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
     headers: { 'Authorization': `Bearer ${accessToken}` },
   });
@@ -3987,22 +3980,17 @@ async function showCalendarPicker(accessToken, events) {
     return;
   }
   const { items: calendars } = await listRes.json();
+  const writable = calendars.filter(c => c.accessRole === 'owner' || c.accessRole === 'writer');
 
-  // 기존 패널이 있으면 제거
   document.getElementById('gcal-picker')?.remove();
-
-  // 캘린더 선택 패널 생성
   const panel = document.createElement('div');
   panel.id = 'gcal-picker';
   panel.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;border:1px solid #ddd;border-radius:10px;padding:20px;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.15);width:300px;max-height:80vh;overflow-y:auto;';
-
-  const savedId = localStorage.getItem('gcal_calendar_id');
-
   panel.innerHTML = `
-    <div style="font-weight:600;margin-bottom:12px;font-size:14px;">캘린더 선택</div>
-    ${calendars.filter(c => c.accessRole === 'owner' || c.accessRole === 'writer').map(c => `
-      <label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;cursor:pointer;margin-bottom:4px;background:${savedId === c.id ? '#f0f7ff' : 'white'};">
-        <input type="radio" name="gcal" value="${c.id}" ${savedId === c.id || (!savedId && c.primary) ? 'checked' : ''}>
+    <div style="font-weight:600;margin-bottom:12px;font-size:14px;">동기화할 캘린더 선택</div>
+    ${writable.map(c => `
+      <label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;cursor:pointer;margin-bottom:4px;">
+        <input type="radio" name="gcal" value="${c.id}" ${c.primary ? 'checked' : ''}>
         <span style="width:10px;height:10px;border-radius:50%;background:${c.backgroundColor || '#4285f4'};flex-shrink:0;"></span>
         <span style="font-size:13px;">${c.summary}</span>
       </label>
@@ -4019,19 +4007,83 @@ async function showCalendarPicker(accessToken, events) {
     if (!calendarId) return;
     localStorage.setItem('gcal_calendar_id', calendarId);
     panel.remove();
-
-    let ok = 0, fail = 0;
-    for (const event of events) {
-      const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(event),
-      });
-      r.ok ? ok++ : fail++;
-    }
-    completeLoading('Google Calendar 동기화');
-    alert(fail === 0 ? `✅ ${ok}개 일정을 추가했습니다.` : `완료 (성공 ${ok} / 실패 ${fail})`);
+    await doSync(accessToken, calendarId);
   };
 
   completeLoading('Google Calendar 동기화');
+}
+
+async function doSync(accessToken, calendarId) {
+  startLoading('Google Calendar 동기화');
+
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul';
+  const calBase = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+  const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
+
+  // 현재 동기화 대상 Notion 항목 (시작+끝 시간 있는 것만)
+  const notionItems = new Map(); // notionId → { event, notionId }
+  for (const item of (currentData?.results || [])) {
+    const title   = item.properties?.['범위']?.title?.[0]?.plain_text;
+    const dateStr = item.properties?.['날짜']?.date?.start;
+    const start   = item.properties?.['시작']?.rich_text?.[0]?.plain_text?.trim();
+    const end     = item.properties?.['끝']?.rich_text?.[0]?.plain_text?.trim();
+    if (!title || !dateStr || !start || !end) continue;
+    notionItems.set(item.id, {
+      summary: title,
+      start: { dateTime: `${dateStr}T${start.padStart(5,'0')}:00`, timeZone },
+      end:   { dateTime: `${dateStr}T${end.padStart(5,'0')}:00`,   timeZone },
+    });
+  }
+
+  const syncMap = getGCalSyncMap(); // { notionId: googleEventId }
+  let created = 0, updated = 0, deleted = 0, failed = 0;
+
+  // 1. 이전에 동기화했지만 지금 대상이 아닌 항목 → Google Calendar에서 삭제
+  for (const [notionId, googleEventId] of Object.entries(syncMap)) {
+    if (!notionItems.has(notionId)) {
+      const r = await fetch(`${calBase}/${googleEventId}`, { method: 'DELETE', headers });
+      if (r.ok || r.status === 404 || r.status === 410) {
+        delete syncMap[notionId];
+        deleted++;
+      } else {
+        failed++;
+      }
+    }
+  }
+
+  // 2. 현재 대상 항목: 이미 있으면 수정, 없으면 생성
+  for (const [notionId, event] of notionItems) {
+    const existingEventId = syncMap[notionId];
+    if (existingEventId) {
+      // 수정 (PUT)
+      const r = await fetch(`${calBase}/${existingEventId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(event),
+      });
+      if (r.ok) {
+        updated++;
+      } else if (r.status === 404 || r.status === 410) {
+        // Google 캘린더에서 직접 삭제된 경우 → 재생성
+        const cr = await fetch(calBase, { method: 'POST', headers, body: JSON.stringify(event) });
+        if (cr.ok) { syncMap[notionId] = (await cr.json()).id; created++; } else failed++;
+      } else {
+        failed++;
+      }
+    } else {
+      // 생성 (POST)
+      const r = await fetch(calBase, { method: 'POST', headers, body: JSON.stringify(event) });
+      if (r.ok) { syncMap[notionId] = (await r.json()).id; created++; } else failed++;
+    }
+  }
+
+  saveGCalSyncMap(syncMap);
+  completeLoading('Google Calendar 동기화');
+
+  const msg = [`✅ 동기화 완료`];
+  if (created) msg.push(`추가 ${created}개`);
+  if (updated) msg.push(`수정 ${updated}개`);
+  if (deleted) msg.push(`삭제 ${deleted}개`);
+  if (failed)  msg.push(`실패 ${failed}개`);
+  alert(msg.join('\n'));
 }
