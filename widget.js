@@ -4059,7 +4059,7 @@ async function doSync(accessToken, calendarId, silent = false) {
     if (!title || !dateStr || !start || !end) continue;
     const bookRelation = item.properties?.['책']?.relation?.[0];
     const bookName = bookRelation && bookNames[bookRelation.id] ? bookNames[bookRelation.id] : '';
-    const summary = bookName ? `[${bookName}] ${title}` : title;
+    const summary = bookName ? `📖 공부 | [${bookName}] ${title}` : `📖 공부 | ${title}`;
     notionItems.set(item.id, {
       summary,
       start: { dateTime: `${dateStr}T${start.padStart(5,'0')}:00`, timeZone },
