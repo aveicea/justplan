@@ -33,6 +33,7 @@ let _calendarMouseUp = null;
 let needsRefresh = false; // fetchAllData 필요 여부
 let editTaskReturnView = 'planner'; // editTask 호출 시 돌아갈 뷰 ('planner' | 'list')
 let addTaskReturnView = 'planner'; // addTask 호출 시 돌아갈 뷰 ('planner' | 'list')
+let isSyncing = false; // Google Calendar 동기화 중복 실행 방지
 
 // 로딩 로그 관리
 function startLoading(message) {
@@ -4043,6 +4044,8 @@ async function autoSyncToGoogleCalendar() {
 }
 
 async function doSync(accessToken, calendarId, silent = false) {
+  if (isSyncing) return;
+  isSyncing = true;
   startLoading('Google Calendar 동기화');
 
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul';
@@ -4072,6 +4075,7 @@ async function doSync(accessToken, calendarId, silent = false) {
   } catch (e) {
     // 실패 시 기존 currentData 사용
     allNotionResults = currentData?.results || [];
+    if (!allNotionResults.length) { isSyncing = false; completeLoading('Google Calendar 동기화'); return; }
   }
 
   // 현재 동기화 대상 Notion 항목 (시작+끝 시간 있는 것만)
@@ -4090,7 +4094,7 @@ async function doSync(accessToken, calendarId, silent = false) {
     const gcalDate = startHour < 6 ? (() => {
       const d = new Date(dateStr + 'T00:00:00');
       d.setDate(d.getDate() + 1);
-      return d.toISOString().slice(0, 10);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     })() : dateStr;
     notionItems.set(item.id, {
       summary,
@@ -4143,6 +4147,7 @@ async function doSync(accessToken, calendarId, silent = false) {
 
   saveGCalSyncMap(syncMap);
   completeLoading('Google Calendar 동기화');
+  isSyncing = false;
 
   if (!silent) {
     const msg = [`✅ 동기화 완료`];
