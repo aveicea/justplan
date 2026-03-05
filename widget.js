@@ -4049,9 +4049,34 @@ async function doSync(accessToken, calendarId, silent = false) {
   const calBase = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
   const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
 
+  // 동기화 전 Notion 최신 데이터 가져오기 (페이지네이션 포함)
+  let allNotionResults = [];
+  try {
+    const notionUrl = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
+    let hasMore = true;
+    let startCursor = undefined;
+    while (hasMore) {
+      const body = { page_size: 100, sorts: [{ property: '날짜', direction: 'descending' }] };
+      if (startCursor) body.start_cursor = startCursor;
+      const res = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${NOTION_API_KEY}`, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) break;
+      const data = await res.json();
+      allNotionResults = allNotionResults.concat(data.results || []);
+      hasMore = data.has_more;
+      startCursor = data.next_cursor;
+    }
+  } catch (e) {
+    // 실패 시 기존 currentData 사용
+    allNotionResults = currentData?.results || [];
+  }
+
   // 현재 동기화 대상 Notion 항목 (시작+끝 시간 있는 것만)
   const notionItems = new Map(); // notionId → { event, notionId }
-  for (const item of (currentData?.results || [])) {
+  for (const item of allNotionResults) {
     const title   = item.properties?.['범위']?.title?.[0]?.plain_text;
     const dateStr = item.properties?.['날짜']?.date?.start;
     const start   = item.properties?.['시작']?.rich_text?.[0]?.plain_text?.trim();
