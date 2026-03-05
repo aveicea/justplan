@@ -1,9 +1,5 @@
 const NOTION_API_KEY = "secret_pNLmc1M6IlbkoiwoUrKnE2mzJlJGYZ61eppTt5tRZuR";
 const DATABASE_ID = "468bf987e6cd4372abf96a8f30f165b1";
-// Google Calendar OAuth 설정
-// Google Cloud Console에서 OAuth 2.0 클라이언트 ID를 발급받아 여기에 입력하세요.
-// https://console.cloud.google.com/apis/credentials
-const GOOGLE_CLIENT_ID = localStorage.getItem('gcal_client_id') || '';
 const CALENDAR_DB_ID = "ddfee91eec854db08c445b0fa1abd347";
 const DDAY_DB_ID = "3ca479d92a3340b7813608b6dd7f4eac";
 const BOOK_DB_ID = "41c3889d4617465db9df008e96ca5af1";
@@ -3938,140 +3934,80 @@ function initCalendarDragDrop() {
 
 // ─── Google Calendar 동기화 ───────────────────────────────────────────────────
 
-/**
- * 시간 문자열("09:00", "9:00", "900") → "HH:MM" 정규화
- */
-function normalizeTime(raw) {
-  if (!raw) return null;
-  const trimmed = raw.trim().replace(/[^0-9:]/g, '');
-  if (trimmed.includes(':')) {
-    const [h, m] = trimmed.split(':');
-    if (h === undefined || m === undefined) return null;
-    const hh = h.padStart(2, '0');
-    const mm = m.padStart(2, '0');
-    if (isNaN(Number(hh)) || isNaN(Number(mm))) return null;
-    return `${hh}:${mm}`;
+window.toggleGCalSettings = function() {
+  const panel = document.getElementById('gcal-settings-panel');
+  const overlay = document.getElementById('gcal-settings-overlay');
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  overlay.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) {
+    const input = document.getElementById('gcal-client-id-input');
+    input.value = localStorage.getItem('gcal_client_id') || '';
+    input.focus();
   }
-  // "900" → "09:00"
-  if (trimmed.length >= 3) {
-    const m = trimmed.slice(-2).padStart(2, '0');
-    const h = trimmed.slice(0, trimmed.length - 2).padStart(2, '0');
-    return `${h}:${m}`;
+};
+
+window.saveGCalClientId = function() {
+  const val = document.getElementById('gcal-client-id-input').value.trim();
+  if (val) {
+    localStorage.setItem('gcal_client_id', val);
+    toggleGCalSettings();
   }
-  return null;
-}
+};
 
-/**
- * Notion 플래너 항목 → Google Calendar 이벤트 객체
- * 날짜(date) + 시작/끝 시간(rich_text) → dateTime
- */
-function buildGCalEvent(item) {
-  const title = item.properties?.['범위']?.title?.[0]?.plain_text || '(제목 없음)';
-  const dateStr = item.properties?.['날짜']?.date?.start;
-  const startRaw = item.properties?.['시작']?.rich_text?.[0]?.plain_text;
-  const endRaw = item.properties?.['끝']?.rich_text?.[0]?.plain_text;
-
-  if (!dateStr) return null;
-
-  const startTime = normalizeTime(startRaw);
-  const endTime = normalizeTime(endRaw);
-
-  if (!startTime || !endTime) return null;
+window.syncToGoogleCalendar = async function() {
+  const clientId = localStorage.getItem('gcal_client_id');
+  if (!clientId) {
+    toggleGCalSettings();
+    return;
+  }
 
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul';
-
-  return {
-    summary: title,
-    start: { dateTime: `${dateStr}T${startTime}:00`, timeZone },
-    end:   { dateTime: `${dateStr}T${endTime}:00`,   timeZone },
-  };
-}
-
-/**
- * Google Identity Services로 액세스 토큰 획득 후 Calendar API에 이벤트 생성
- */
-window.syncToGoogleCalendar = async function() {
-  // 1. Client ID 확인
-  let clientId = localStorage.getItem('gcal_client_id') || '';
-  if (!clientId) {
-    clientId = prompt(
-      'Google Calendar 동기화를 위해 OAuth 클라이언트 ID가 필요합니다.\n' +
-      'Google Cloud Console(https://console.cloud.google.com/apis/credentials)에서\n' +
-      '"웹 애플리케이션" 타입의 OAuth 2.0 클라이언트 ID를 발급받아 입력해 주세요.\n\n' +
-      'Client ID:'
-    );
-    if (!clientId) return;
-    localStorage.setItem('gcal_client_id', clientId.trim());
-    clientId = clientId.trim();
-  }
-
-  // 2. 동기화할 항목 수집 (시작+끝 시간이 모두 있는 항목만)
-  const items = (currentData?.results || []);
-  const events = items.map(buildGCalEvent).filter(Boolean);
+  const events = (currentData?.results || []).map(item => {
+    const title   = item.properties?.['범위']?.title?.[0]?.plain_text;
+    const dateStr = item.properties?.['날짜']?.date?.start;
+    const start   = item.properties?.['시작']?.rich_text?.[0]?.plain_text?.trim();
+    const end     = item.properties?.['끝']?.rich_text?.[0]?.plain_text?.trim();
+    if (!title || !dateStr || !start || !end) return null;
+    return {
+      summary: title,
+      start: { dateTime: `${dateStr}T${start.padStart(5,'0')}:00`, timeZone },
+      end:   { dateTime: `${dateStr}T${end.padStart(5,'0')}:00`,   timeZone },
+    };
+  }).filter(Boolean);
 
   if (events.length === 0) {
-    alert('동기화할 항목이 없습니다.\n시작 시간과 끝 시간이 모두 입력된 항목만 Google Calendar에 추가됩니다.');
+    alert('동기화할 항목이 없습니다.\n시작·끝 시간이 모두 입력된 항목만 동기화됩니다.');
     return;
   }
 
   startLoading('Google Calendar 동기화');
-
-  // 3. Google Identity Services로 토큰 요청
-  let tokenClient;
   try {
-    tokenClient = google.accounts.oauth2.initTokenClient({
+    const tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: 'https://www.googleapis.com/auth/calendar.events',
-      callback: async (tokenResponse) => {
-        if (tokenResponse.error) {
-          alert('Google 인증에 실패했습니다: ' + tokenResponse.error);
+      callback: async (res) => {
+        if (res.error) {
+          alert('Google 인증 실패: ' + res.error);
           completeLoading('Google Calendar 동기화 실패');
           return;
         }
-        await createGCalEvents(tokenResponse.access_token, events);
+        let ok = 0, fail = 0;
+        for (const event of events) {
+          const r = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${res.access_token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(event),
+          });
+          r.ok ? ok++ : fail++;
+        }
+        completeLoading('Google Calendar 동기화');
+        alert(fail === 0 ? `✅ ${ok}개 일정을 Google Calendar에 추가했습니다.` : `완료 (성공 ${ok} / 실패 ${fail})`);
       },
     });
-    tokenClient.requestAccessToken({ prompt: 'consent' });
+    tokenClient.requestAccessToken();
   } catch (err) {
-    console.error('Google Identity Services 초기화 실패:', err);
-    alert('Google 로그인 라이브러리를 불러오지 못했습니다.\n인터넷 연결을 확인한 후 다시 시도해 주세요.');
+    alert('Google 로그인 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.');
     completeLoading('Google Calendar 동기화 실패');
   }
 };
-
-async function createGCalEvents(accessToken, events) {
-  const CALENDAR_API = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
-  let successCount = 0;
-  let failCount = 0;
-
-  for (const event of events) {
-    try {
-      const res = await fetch(CALENDAR_API, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(event),
-      });
-      if (res.ok) {
-        successCount++;
-      } else {
-        const err = await res.json();
-        console.error('이벤트 생성 실패:', event.summary, err);
-        failCount++;
-      }
-    } catch (err) {
-      console.error('이벤트 생성 오류:', event.summary, err);
-      failCount++;
-    }
-  }
-
-  completeLoading('Google Calendar 동기화');
-
-  if (failCount === 0) {
-    alert(`✅ Google Calendar에 ${successCount}개의 일정을 추가했습니다.`);
-  } else {
-    alert(`Google Calendar 동기화 완료\n성공: ${successCount}개 / 실패: ${failCount}개`);
-  }
-}

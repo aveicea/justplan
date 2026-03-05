@@ -243,8 +243,25 @@
         <span class="loading" id="loading"></span>
         <button id="view-toggle">TIME TABLE</button>
         <button id="gcal-sync-btn" onclick="syncToGoogleCalendar()" title="Google Calendar에 동기화" style="font-size: 11px; padding: 2px 6px;">📅 GCal</button>
+        <button onclick="toggleGCalSettings()" title="Google Calendar 설정" style="font-size: 11px; padding: 2px 4px; background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; color: #666;">⚙️</button>
       </div>
     </div>
+
+    <!-- Google Calendar 설정 패널 -->
+    <div id="gcal-settings-panel" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border:1px solid #ddd; border-radius:10px; padding:20px; z-index:9999; box-shadow:0 4px 20px rgba(0,0,0,0.15); width:320px;">
+      <div style="font-weight:600; margin-bottom:12px; font-size:14px;">Google Calendar 설정</div>
+      <div style="font-size:12px; color:#666; margin-bottom:10px; line-height:1.5;">
+        <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:#4285f4;">Google Cloud Console</a>에서<br>
+        OAuth 2.0 클라이언트 ID(웹 앱)를 발급받아 입력하세요.
+      </div>
+      <input type="text" id="gcal-client-id-input" placeholder="Client ID (…googleusercontent.com)"
+        style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:12px; margin-bottom:10px; box-sizing:border-box;">
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button onclick="toggleGCalSettings()" style="padding:6px 12px; border:1px solid #ddd; border-radius:6px; background:white; cursor:pointer; font-size:12px;">취소</button>
+        <button onclick="saveGCalClientId()" style="padding:6px 12px; background:#4285f4; color:white; border:none; border-radius:6px; cursor:pointer; font-size:12px;">저장</button>
+      </div>
+    </div>
+    <div id="gcal-settings-overlay" onclick="toggleGCalSettings()" style="display:none; position:fixed; inset:0; z-index:9998;"></div>
 
     <div id="content">
       <div class="empty-message">데이터 로딩 중...</div>
