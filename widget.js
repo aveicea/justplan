@@ -2025,6 +2025,7 @@ async function fetchAllData() {
 
     // 폼이 열려있으면 재렌더링 스킵 (할일 추가/수정 중 튕김 방지)
     if (document.getElementById('new-task-title') || document.getElementById('edit-task-title')) {
+      autoSyncToGoogleCalendar();
       return;
     }
 
