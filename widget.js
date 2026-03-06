@@ -1803,6 +1803,9 @@ window.updateRating = async function(taskId, value) {
 document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
 
+  // OAuth 리다이렉트 후 토큰 처리 (PWA 모드)
+  const oauthReturned = checkOAuthRedirectToken();
+
   // 플래너 + D-Day + 캘린더 동시 로드
   const fetchDataPromise = fetchData();
 
@@ -1824,6 +1827,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   await fetchDataPromise;
+
+  // OAuth 리다이렉트 후 복귀했다면 동기화 자동 실행
+  if (oauthReturned && localStorage.getItem('gcal_pending_sync')) {
+    localStorage.removeItem('gcal_pending_sync');
+    setTimeout(() => syncToGoogleCalendar(), 500);
+  }
 
   // 전체 플래너 데이터 백그라운드에서 로드
   fetchAllData().catch(err => {
@@ -3990,6 +3999,43 @@ async function getGCalToken(showPopup = true) {
   });
 }
 
+// 홈 화면(PWA) 모드 감지
+function isStandaloneMode() {
+  return window.navigator.standalone === true ||
+         window.matchMedia('(display-mode: standalone)').matches;
+}
+
+// OAuth 리다이렉트 후 URL 해시에서 토큰 추출
+function checkOAuthRedirectToken() {
+  const hash = window.location.hash;
+  if (!hash) return false;
+  const params = new URLSearchParams(hash.substring(1));
+  const accessToken = params.get('access_token');
+  const expiresIn = params.get('expires_in');
+  const state = params.get('state');
+  if (accessToken && state === 'gcal_auth') {
+    _gcalToken = accessToken;
+    _gcalTokenExpiry = Date.now() + (expiresIn ? parseInt(expiresIn) * 1000 : 3600000);
+    history.replaceState(null, '', location.pathname + location.search);
+    return true;
+  }
+  return false;
+}
+
+// 팝업 대신 현재 창을 Google 인증 페이지로 리다이렉트 (PWA용)
+function redirectToGoogleAuth() {
+  const redirectUri = location.origin + location.pathname;
+  const scope = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events';
+  const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' +
+    'client_id=' + encodeURIComponent(GOOGLE_CLIENT_ID) +
+    '&redirect_uri=' + encodeURIComponent(redirectUri) +
+    '&response_type=token' +
+    '&scope=' + encodeURIComponent(scope) +
+    '&state=gcal_auth';
+  localStorage.setItem('gcal_pending_sync', '1');
+  location.href = authUrl;
+}
+
 // localStorage: { notionPageId: googleEventId, ... }
 function getGCalSyncMap() {
   return JSON.parse(localStorage.getItem('gcal_sync_map') || '{}');
@@ -3999,6 +4045,11 @@ function saveGCalSyncMap(map) {
 }
 
 window.syncToGoogleCalendar = async function() {
+  // 홈 화면(PWA) 모드에서는 팝업이 차단됨 → 리다이렉트 인증 사용
+  if (isStandaloneMode() && !getCachedToken()) {
+    redirectToGoogleAuth();
+    return;
+  }
   startLoading('Google Calendar 동기화');
   try {
     const accessToken = await getGCalToken();
