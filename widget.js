@@ -4033,6 +4033,12 @@ function redirectToGoogleAuth() {
     '&scope=' + encodeURIComponent(scope) +
     '&state=gcal_auth';
   localStorage.setItem('gcal_pending_sync', '1');
+  // Google Cloud Console → 승인된 리디렉션 URI에 아래 주소가 등록됐는지 확인
+  if (!localStorage.getItem('gcal_redirect_uri_confirmed')) {
+    const msg = 'Google Cloud Console에서 아래 주소를\n[승인된 리디렉션 URI]에 추가해야 합니다:\n\n' + redirectUri + '\n\n이미 추가했으면 확인을 눌러주세요.';
+    if (!confirm(msg)) { localStorage.removeItem('gcal_pending_sync'); return; }
+    localStorage.setItem('gcal_redirect_uri_confirmed', '1');
+  }
   location.href = authUrl;
 }
 
