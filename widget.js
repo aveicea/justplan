@@ -4001,7 +4001,13 @@ async function getGCalToken(showPopup = true) {
   });
 }
 
-// iOS 홈 화면 앱 감지 (iOS만 팝업 차단됨)
+// iOS 홈 화면/웹 앱 감지 (iOS는 팝업 차단, macOS 웹앱은 팝업 가능)
+function isIOSWebApp() {
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  return window.navigator.standalone === true && isIOS;
+}
+// macOS 독 앱 또는 일반 standalone (팝업은 가능하지만 standalone 여부 감지용)
 function isStandaloneMode() {
   return window.navigator.standalone === true;
 }
@@ -4025,7 +4031,7 @@ function checkOAuthRedirectToken() {
 
 // 팝업 대신 현재 창을 Google 인증 페이지로 리다이렉트 (PWA용)
 function redirectToGoogleAuth() {
-  const redirectUri = location.origin + location.pathname;
+  const redirectUri = location.origin; // 슬래시 없는 깔끔한 형태
   const scope = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events';
   const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' +
     'client_id=' + encodeURIComponent(GOOGLE_CLIENT_ID) +
@@ -4034,8 +4040,6 @@ function redirectToGoogleAuth() {
     '&scope=' + encodeURIComponent(scope) +
     '&state=gcal_auth';
   localStorage.setItem('gcal_pending_sync', '1');
-  const msg = '아래 주소가 Google Cloud Console\n[승인된 리디렉션 URI]에 정확히 등록되어 있나요?\n\n' + redirectUri;
-  if (!confirm(msg)) { localStorage.removeItem('gcal_pending_sync'); return; }
   location.href = authUrl;
 }
 
@@ -4049,7 +4053,8 @@ function saveGCalSyncMap(map) {
 
 window.syncToGoogleCalendar = async function() {
   // 홈 화면(PWA) 모드에서는 팝업이 차단됨 → 리다이렉트 인증 사용
-  if (isStandaloneMode() && !getCachedToken()) {
+  // iOS 웹앱에서만 redirect 사용 (팝업 차단됨), macOS 웹앱/일반 브라우저는 팝업 사용
+  if (isIOSWebApp() && !getCachedToken()) {
     redirectToGoogleAuth();
     return;
   }
@@ -4063,7 +4068,7 @@ window.syncToGoogleCalendar = async function() {
       await showCalendarPicker(accessToken);
     }
   } catch (err) {
-    alert('Google 인증 실패. 새로고침 후 다시 시도해 주세요.');
+    alert('Google 인증 실패: ' + (err?.message || err || '알 수 없는 오류'));
     completeLoading('Google Calendar 동기화 실패');
   }
 };
