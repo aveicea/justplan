@@ -1996,24 +1996,29 @@ async function fetchAllData() {
   try {
     needsRefresh = false;
     const notionUrl = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
-    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${NOTION_API_KEY}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        page_size: 100,
-        sorts: [{ property: "날짜", direction: "descending" }]
-      })
-    });
+    const headers = {
+      'Authorization': `Bearer ${NOTION_API_KEY}`,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json'
+    };
+    const sorts = [{ property: "날짜", direction: "descending" }];
 
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`);
+    let allResults = [];
+    let hasMore = true;
+    let startCursor = undefined;
+    while (hasMore) {
+      const body = { page_size: 100, sorts };
+      if (startCursor) body.start_cursor = startCursor;
+      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+        method: 'POST', headers, body: JSON.stringify(body)
+      });
+      if (!response.ok) throw new Error(`API Error: ${response.status}`);
+      const page = await response.json();
+      allResults = allResults.concat(page.results || []);
+      hasMore = page.has_more;
+      startCursor = page.next_cursor;
     }
-
-    currentData = await response.json();
+    currentData = { results: allResults };
 
     // 책 이름 불러오기
     await fetchBookNames();
@@ -4273,8 +4278,10 @@ async function doSync(accessToken, calendarId, silent = false) {
         loading.textContent = '✅';
         loading.title = msg.join('\n');
         setTimeout(() => {
-          loading.textContent = '';
-          loading.title = '';
+          if (loading.textContent === '✅') {
+            loading.textContent = '';
+            loading.title = '';
+          }
         }, 5000);
       }
     }
