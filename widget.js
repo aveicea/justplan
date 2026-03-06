@@ -1022,6 +1022,7 @@ window.confirmEditTask = async function(taskId) {
       }
 
       await updateNotionPage(taskId, properties);
+      autoSyncToGoogleCalendar();
       await fetchAllData();
       completeLoading(`${title} 수정`);
     } catch (error) {
@@ -1493,6 +1494,7 @@ window.updateTime = async function(taskId, field, value, inputElement) {
       });
     }
     completeLoading(`${taskTitle} ${fieldName} 수정`);
+    autoSyncToGoogleCalendar();
     scheduleRenderData();
   } catch (error) {
     console.error('시간 업데이트 실패:', error);
@@ -2025,6 +2027,7 @@ async function fetchAllData() {
 
     // 폼이 열려있으면 재렌더링 스킵 (할일 추가/수정 중 튕김 방지)
     if (document.getElementById('new-task-title') || document.getElementById('edit-task-title')) {
+      autoSyncToGoogleCalendar();
       return;
     }
 
@@ -3960,12 +3963,27 @@ function initCalendarDragDrop() {
 
 const GOOGLE_CLIENT_ID = '819141705912-ivusnurnoq47ro3i913um4qelmt31jf2.apps.googleusercontent.com';
 
-// 토큰 캐시 (메모리, 만료 시 자동 재요청)
+// 토큰 캐시 (메모리 + localStorage, 만료 시 자동 재요청)
 let _gcalToken = null;
 let _gcalTokenExpiry = 0;
 
+function saveToken(token, expiry) {
+  _gcalToken = token;
+  _gcalTokenExpiry = expiry;
+  localStorage.setItem('gcal_token', token);
+  localStorage.setItem('gcal_token_expiry', String(expiry));
+}
+
 function getCachedToken() {
-  if (_gcalToken && Date.now() < _gcalTokenExpiry - 60000) return _gcalToken; // 만료 1분 전부터 갱신
+  if (_gcalToken && Date.now() < _gcalTokenExpiry - 60000) return _gcalToken;
+  // 메모리에 없으면 localStorage에서 복원
+  const stored = localStorage.getItem('gcal_token');
+  const expiry = parseInt(localStorage.getItem('gcal_token_expiry') || '0', 10);
+  if (stored && Date.now() < expiry - 60000) {
+    _gcalToken = stored;
+    _gcalTokenExpiry = expiry;
+    return stored;
+  }
   return null;
 }
 
@@ -3976,8 +3994,7 @@ function requestGCalToken(prompt = '', onSuccess, onError) {
     callback: (res) => {
       if (res.error) { onError && onError(res.error); return; }
       if (!res.access_token) { onError && onError('popup_coop_blocked'); return; }
-      _gcalToken = res.access_token;
-      _gcalTokenExpiry = Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000);
+      saveToken(res.access_token, Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000));
       onSuccess(res.access_token);
     },
   }).requestAccessToken({ prompt });
@@ -3993,8 +4010,7 @@ async function getGCalToken(showPopup = true) {
       scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
       callback: (res) => {
         if (!res.error) {
-          _gcalToken = res.access_token;
-          _gcalTokenExpiry = Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000);
+          saveToken(res.access_token, Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000));
           resolve(res.access_token);
         } else if (showPopup) {
           // 조용한 갱신 실패 → 팝업으로 재시도 (최초 로그인 또는 세션 만료)
@@ -4029,8 +4045,7 @@ function checkOAuthRedirectToken() {
   const state = params.get('state');
   console.log('[OAuth] access_token:', !!accessToken, 'state:', state, 'pending:', localStorage.getItem('gcal_pending_sync'));
   if (accessToken && state === 'gcal_auth') {
-    _gcalToken = accessToken;
-    _gcalTokenExpiry = Date.now() + (expiresIn ? parseInt(expiresIn) * 1000 : 3600000);
+    saveToken(accessToken, Date.now() + (expiresIn ? parseInt(expiresIn) * 1000 : 3600000));
     history.replaceState(null, '', location.pathname + location.search);
     console.log('[OAuth] token saved, returning true');
     return true;
@@ -4129,9 +4144,31 @@ async function autoSyncToGoogleCalendar() {
   if (!calendarId) return;
   try {
     if (typeof google === 'undefined' || !google.accounts) return;
-    const cached = getCachedToken();
-    if (!cached) return; // 캐시된 토큰 없으면 자동 동기화 스킵 (팝업 띄우지 않음)
-    await doSync(cached, calendarId, true);
+    let token = getCachedToken();
+    if (!token) {
+      // 만료됐으면 팝업/리다이렉트 없이 조용히 갱신 시도
+      // Google에 로그인된 상태면 자동 성공, 아니면 null 반환
+      token = await new Promise((resolve) => {
+        try {
+          google.accounts.oauth2.initTokenClient({
+            client_id: GOOGLE_CLIENT_ID,
+            scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+            callback: (res) => {
+              if (!res.error && res.access_token) {
+                saveToken(res.access_token, Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000));
+                resolve(res.access_token);
+              } else {
+                resolve(null);
+              }
+            },
+          }).requestAccessToken({ prompt: 'none' });
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    }
+    if (!token) return;
+    await doSync(token, calendarId, true);
   } catch (e) {
     // 자동 동기화 실패 - 무시
   }
