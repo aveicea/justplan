@@ -4040,8 +4040,6 @@ function redirectToGoogleAuth() {
     '&scope=' + encodeURIComponent(scope) +
     '&state=gcal_auth';
   localStorage.setItem('gcal_pending_sync', '1');
-  const msg = 'Google Cloud Console [승인된 리디렉션 URI]에\n아래 주소가 정확히 등록돼 있는지 확인하세요:\n\n' + redirectUri + '\n\n(슬래시 없는 버전)';
-  if (!confirm(msg)) { localStorage.removeItem('gcal_pending_sync'); return; }
   location.href = authUrl;
 }
 
