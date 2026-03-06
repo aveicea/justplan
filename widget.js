@@ -1856,6 +1856,24 @@ function setupEventListeners() {
   const tooltip = document.getElementById('loading-tooltip');
   if (loading) {
     loading.title = '작업 로그';
+    loading.addEventListener('click', () => {
+      const existing = document.getElementById('loading-log-popup');
+      if (existing) { existing.remove(); return; }
+      const logText = loadingLogs.length > 0
+        ? loadingLogs.slice(-10).map(log =>
+            log.status === 'loading' ? `⏳ ${log.message}` : `✓ ${log.message}`
+          ).join('\n')
+        : '작업 로그가 없습니다';
+      const popup = document.createElement('div');
+      popup.id = 'loading-log-popup';
+      popup.style.cssText = 'position:fixed;top:40px;right:12px;background:white;border:1px solid #ddd;border-radius:8px;padding:10px 14px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.12);font-size:12px;white-space:pre;line-height:1.7;color:#333;max-width:280px;';
+      popup.textContent = logText;
+      document.body.appendChild(popup);
+      setTimeout(() => popup.remove(), 5000);
+      document.addEventListener('click', (e) => {
+        if (!popup.contains(e.target) && e.target !== loading) popup.remove();
+      }, { once: true });
+    });
   }
   if (tooltip) {
     tooltip.textContent = '작업 로그가 없습니다';
