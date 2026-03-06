@@ -4265,27 +4265,30 @@ async function doSync(accessToken, calendarId, silent = false) {
       else if (r.status === 409) { /* 다른 기기가 이미 생성 → 중복 없음 */ }
       else { failed++; }
     }
-    completeLoading('Google Calendar 동기화');
+  }
 
-    if (!silent) {
-      const msg = [`✅ 동기화 완료`];
-      if (created) msg.push(`추가 ${created}개`);
-      if (updated) msg.push(`수정 ${updated}개`);
-      if (deleted) msg.push(`삭제 ${deleted}개`);
-      if (failed)  msg.push(`실패 ${failed}개`);
-      const loading = document.getElementById('loading');
-      if (loading) {
-        loading.textContent = '✅';
-        loading.title = msg.join('\n');
-        setTimeout(() => {
-          if (loading.textContent === '✅') {
-            loading.textContent = '';
-            loading.title = '';
-          }
-        }, 5000);
-      }
+  saveGCalSyncMap(syncMap);
+
+  if (!silent) {
+    const msg = [`✅ 동기화 완료`];
+    if (created) msg.push(`추가 ${created}개`);
+    if (updated) msg.push(`수정 ${updated}개`);
+    if (deleted) msg.push(`삭제 ${deleted}개`);
+    if (failed)  msg.push(`실패 ${failed}개`);
+    const loading = document.getElementById('loading');
+    if (loading) {
+      loading.textContent = '✅';
+      loading.title = msg.join('\n');
+      setTimeout(() => {
+        if (loading.textContent === '✅') {
+          loading.textContent = '';
+          loading.title = '';
+        }
+      }, 5000);
     }
+  }
   } finally {
     isSyncing = false;
+    completeLoading('Google Calendar 동기화');
   }
 }
