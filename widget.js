@@ -3970,6 +3970,7 @@ function requestGCalToken(prompt = '', onSuccess, onError) {
     scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
     callback: (res) => {
       if (res.error) { onError && onError(res.error); return; }
+      if (!res.access_token) { onError && onError('popup_coop_blocked'); return; }
       _gcalToken = res.access_token;
       _gcalTokenExpiry = Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000);
       onSuccess(res.access_token);
@@ -4063,7 +4064,7 @@ window.syncToGoogleCalendar = async function() {
     }
   } catch (err) {
     // 팝업 차단 시 redirect 방식으로 자동 전환
-    if (err === 'popup_failed_to_open' || err === 'popup_closed_by_browser') {
+    if (err === 'popup_failed_to_open' || err === 'popup_closed_by_browser' || err === 'popup_coop_blocked' || err === 'popup_closed_by_user') {
       completeLoading('');
       redirectToGoogleAuth();
       return;
