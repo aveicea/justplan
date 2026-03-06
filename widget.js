@@ -1022,6 +1022,7 @@ window.confirmEditTask = async function(taskId) {
       }
 
       await updateNotionPage(taskId, properties);
+      autoSyncToGoogleCalendar();
       await fetchAllData();
       completeLoading(`${title} 수정`);
     } catch (error) {
@@ -1493,6 +1494,7 @@ window.updateTime = async function(taskId, field, value, inputElement) {
       });
     }
     completeLoading(`${taskTitle} ${fieldName} 수정`);
+    autoSyncToGoogleCalendar();
     scheduleRenderData();
   } catch (error) {
     console.error('시간 업데이트 실패:', error);
