@@ -4233,24 +4233,31 @@ async function doSync(accessToken, calendarId, silent = false) {
       ...event,
       extendedProperties: { private: { source: 'justplan', notionId, notionHash: hash } },
     };
+    // notionId 기반 결정적 이벤트 ID (중복 생성 원천 차단)
+    const deterministicId = 'jp' + notionId.replace(/-/g, '');
+    const eventWithId = { ...eventWithMeta, id: deterministicId };
+
     if (entry) {
       // 내용 변경 없으면 스킵
       if (entry.hash === hash) continue;
-      // 수정 (PUT)
-      const r = await fetch(`${calBase}/${entry.id}`, { method: 'PUT', headers, body: JSON.stringify(eventWithMeta) });
+      // 수정 (PUT) - 기존 ID 또는 결정적 ID 사용
+      const targetId = entry.id || deterministicId;
+      const r = await fetch(`${calBase}/${targetId}`, { method: 'PUT', headers, body: JSON.stringify(eventWithId) });
       if (r.ok) {
         updated++;
       } else if (r.status === 404 || r.status === 410) {
         // Google 캘린더에서 직접 삭제된 경우 → 재생성
-        const cr = await fetch(calBase, { method: 'POST', headers, body: JSON.stringify(eventWithMeta) });
-        if (!cr.ok) failed++;
+        const cr = await fetch(calBase, { method: 'POST', headers, body: JSON.stringify(eventWithId) });
+        if (cr.ok || cr.status === 409) { updated++; } else { failed++; }
       } else {
         failed++;
       }
     } else {
-      // 생성 (POST)
-      const r = await fetch(calBase, { method: 'POST', headers, body: JSON.stringify(eventWithMeta) });
-      if (r.ok) { created++; } else { failed++; }
+      // 생성 (POST) - 결정적 ID로 생성, 409(이미 존재)도 성공으로 처리
+      const r = await fetch(calBase, { method: 'POST', headers, body: JSON.stringify(eventWithId) });
+      if (r.ok) { created++; }
+      else if (r.status === 409) { /* 다른 기기가 이미 생성 → 중복 없음 */ }
+      else { failed++; }
     }
   }
   completeLoading('Google Calendar 동기화');
