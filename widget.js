@@ -1803,8 +1803,10 @@ window.updateRating = async function(taskId, value) {
 document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
 
-  // OAuth 리다이렉트 후 토큰 처리 (PWA 모드)
+  // OAuth 리다이렉트 후 토큰 처리 (iOS PWA 모드)
   const oauthReturned = checkOAuthRedirectToken();
+  // redirect 없이 로드됐는데 pending_sync가 남아있으면 찌꺼기 제거
+  if (!oauthReturned) localStorage.removeItem('gcal_pending_sync');
 
   // 플래너 + D-Day + 캘린더 동시 로드
   const fetchDataPromise = fetchData();
@@ -3999,10 +4001,9 @@ async function getGCalToken(showPopup = true) {
   });
 }
 
-// 홈 화면(PWA) 모드 감지
+// iOS 홈 화면 앱 감지 (iOS만 팝업 차단됨)
 function isStandaloneMode() {
-  return window.navigator.standalone === true ||
-         window.matchMedia('(display-mode: standalone)').matches;
+  return window.navigator.standalone === true;
 }
 
 // OAuth 리다이렉트 후 URL 해시에서 토큰 추출
