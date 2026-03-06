@@ -4032,7 +4032,7 @@ function checkOAuthRedirectToken() {
 
 // 팝업 대신 현재 창을 Google 인증 페이지로 리다이렉트 (PWA용)
 function redirectToGoogleAuth() {
-  const redirectUri = location.origin; // 슬래시 없는 깔끔한 형태
+  const redirectUri = location.origin + location.pathname.replace(/\/$/, ''); // 경로 포함, 끝 슬래시 제거
   const scope = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events';
   const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' +
     'client_id=' + encodeURIComponent(GOOGLE_CLIENT_ID) +
