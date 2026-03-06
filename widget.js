@@ -4016,15 +4016,18 @@ function isStandaloneMode() {
 // OAuth 리다이렉트 후 URL 해시에서 토큰 추출
 function checkOAuthRedirectToken() {
   const hash = window.location.hash;
+  console.log('[OAuth] hash:', hash);
   if (!hash) return false;
   const params = new URLSearchParams(hash.substring(1));
   const accessToken = params.get('access_token');
   const expiresIn = params.get('expires_in');
   const state = params.get('state');
+  console.log('[OAuth] access_token:', !!accessToken, 'state:', state, 'pending:', localStorage.getItem('gcal_pending_sync'));
   if (accessToken && state === 'gcal_auth') {
     _gcalToken = accessToken;
     _gcalTokenExpiry = Date.now() + (expiresIn ? parseInt(expiresIn) * 1000 : 3600000);
     history.replaceState(null, '', location.pathname + location.search);
+    console.log('[OAuth] token saved, returning true');
     return true;
   }
   return false;
