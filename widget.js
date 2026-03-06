@@ -4063,7 +4063,7 @@ window.syncToGoogleCalendar = async function() {
       await showCalendarPicker(accessToken);
     }
   } catch (err) {
-    alert('Google 인증 실패. 새로고침 후 다시 시도해 주세요.');
+    alert('Google 인증 실패: ' + (err?.message || err || '알 수 없는 오류'));
     completeLoading('Google Calendar 동기화 실패');
   }
 };
