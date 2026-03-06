@@ -1996,27 +1996,35 @@ async function fetchAllData() {
   try {
     needsRefresh = false;
     const notionUrl = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
-    const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${NOTION_API_KEY}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        page_size: 100,
-        sorts: [{ property: "날짜", direction: "descending" }]
-      })
-    });
+    const headers = {
+      'Authorization': `Bearer ${NOTION_API_KEY}`,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json'
+    };
+    const sorts = [{ property: "날짜", direction: "descending" }];
 
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`);
+    let allResults = [];
+    let hasMore = true;
+    let startCursor = undefined;
+    while (hasMore) {
+      const body = { page_size: 100, sorts };
+      if (startCursor) body.start_cursor = startCursor;
+      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
+        method: 'POST', headers, body: JSON.stringify(body)
+      });
+      if (!response.ok) throw new Error(`API Error: ${response.status}`);
+      const page = await response.json();
+      allResults = allResults.concat(page.results || []);
+      hasMore = page.has_more;
+      startCursor = page.next_cursor;
     }
-
-    currentData = await response.json();
+    currentData = { results: allResults };
 
     // 책 이름 불러오기
     await fetchBookNames();
+
+    // Google Calendar 자동 동기화 (캘린더가 설정된 경우에만, 폼 열림 여부와 무관)
+    autoSyncToGoogleCalendar();
 
     // 폼이 열려있으면 재렌더링 스킵 (할일 추가/수정 중 튕김 방지)
     if (document.getElementById('new-task-title') || document.getElementById('edit-task-title')) {
@@ -2029,9 +2037,6 @@ async function fetchAllData() {
     } else {
       renderData();
     }
-
-    // Google Calendar 자동 동기화 (캘린더가 설정된 경우에만)
-    autoSyncToGoogleCalendar();
   } catch (error) {
     console.error('전체 데이터 로드 실패:', error);
   }
@@ -4137,6 +4142,7 @@ async function doSync(accessToken, calendarId, silent = false) {
   isSyncing = true;
   startLoading('Google Calendar 동기화');
 
+  try {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul';
   const calBase = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
   const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
@@ -4259,24 +4265,27 @@ async function doSync(accessToken, calendarId, silent = false) {
       else if (r.status === 409) { /* 다른 기기가 이미 생성 → 중복 없음 */ }
       else { failed++; }
     }
-  }
-  completeLoading('Google Calendar 동기화');
-  isSyncing = false;
+    completeLoading('Google Calendar 동기화');
 
-  if (!silent) {
-    const msg = [`✅ 동기화 완료`];
-    if (created) msg.push(`추가 ${created}개`);
-    if (updated) msg.push(`수정 ${updated}개`);
-    if (deleted) msg.push(`삭제 ${deleted}개`);
-    if (failed)  msg.push(`실패 ${failed}개`);
-    const loading = document.getElementById('loading');
-    if (loading) {
-      loading.textContent = '✅';
-      loading.title = msg.join('\n');
-      setTimeout(() => {
-        loading.textContent = '';
-        loading.title = '';
-      }, 5000);
+    if (!silent) {
+      const msg = [`✅ 동기화 완료`];
+      if (created) msg.push(`추가 ${created}개`);
+      if (updated) msg.push(`수정 ${updated}개`);
+      if (deleted) msg.push(`삭제 ${deleted}개`);
+      if (failed)  msg.push(`실패 ${failed}개`);
+      const loading = document.getElementById('loading');
+      if (loading) {
+        loading.textContent = '✅';
+        loading.title = msg.join('\n');
+        setTimeout(() => {
+          if (loading.textContent === '✅') {
+            loading.textContent = '';
+            loading.title = '';
+          }
+        }, 5000);
+      }
     }
+  } finally {
+    isSyncing = false;
   }
 }
