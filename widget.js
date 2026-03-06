@@ -4052,8 +4052,19 @@ function saveGCalSyncMap(map) {
   localStorage.setItem('gcal_sync_map', JSON.stringify(map));
 }
 
+function isSafariBrowser() {
+  const ua = navigator.userAgent;
+  return /Safari/.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS/.test(ua);
+}
+
 window.syncToGoogleCalendar = async function() {
   startLoading('Google Calendar 동기화');
+  // Safari만 팝업 지원, 나머지(Chrome/Arc 등)는 COOP로 팝업 통신 불가 → redirect
+  if (!isSafariBrowser() && !getCachedToken()) {
+    completeLoading('');
+    redirectToGoogleAuth();
+    return;
+  }
   try {
     const accessToken = await getGCalToken();
     const calendarId = localStorage.getItem('gcal_calendar_id');
@@ -4063,12 +4074,6 @@ window.syncToGoogleCalendar = async function() {
       await showCalendarPicker(accessToken);
     }
   } catch (err) {
-    // 팝업 차단 시 redirect 방식으로 자동 전환
-    if (err === 'popup_failed_to_open' || err === 'popup_closed_by_browser' || err === 'popup_coop_blocked' || err === 'popup_closed_by_user') {
-      completeLoading('');
-      redirectToGoogleAuth();
-      return;
-    }
     alert('Google 인증 실패: ' + (err?.message || err || '알 수 없는 오류'));
     completeLoading('Google Calendar 동기화 실패');
   }
