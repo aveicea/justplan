@@ -4001,7 +4001,13 @@ async function getGCalToken(showPopup = true) {
   });
 }
 
-// iOS 홈 화면 앱 감지 (iOS만 팝업 차단됨)
+// iOS 홈 화면/웹 앱 감지 (iOS는 팝업 차단, macOS 웹앱은 팝업 가능)
+function isIOSWebApp() {
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  return window.navigator.standalone === true && isIOS;
+}
+// macOS 독 앱 또는 일반 standalone (팝업은 가능하지만 standalone 여부 감지용)
 function isStandaloneMode() {
   return window.navigator.standalone === true;
 }
@@ -4049,7 +4055,8 @@ function saveGCalSyncMap(map) {
 
 window.syncToGoogleCalendar = async function() {
   // 홈 화면(PWA) 모드에서는 팝업이 차단됨 → 리다이렉트 인증 사용
-  if (isStandaloneMode() && !getCachedToken()) {
+  // iOS 웹앱에서만 redirect 사용 (팝업 차단됨), macOS 웹앱/일반 브라우저는 팝업 사용
+  if (isIOSWebApp() && !getCachedToken()) {
     redirectToGoogleAuth();
     return;
   }
