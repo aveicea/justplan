@@ -4061,10 +4061,8 @@ function isSafariBrowser() {
 }
 
 window.syncToGoogleCalendar = async function() {
-  startLoading('Google Calendar 동기화');
   // Safari만 팝업 지원, 나머지(Chrome/Arc 등)는 COOP로 팝업 통신 불가 → redirect
   if (!isSafariBrowser() && !getCachedToken()) {
-    completeLoading('');
     redirectToGoogleAuth();
     return;
   }
@@ -4078,7 +4076,6 @@ window.syncToGoogleCalendar = async function() {
     }
   } catch (err) {
     alert('Google 인증 실패: ' + (err?.message || err || '알 수 없는 오류'));
-    completeLoading('Google Calendar 동기화 실패');
   }
 };
 
@@ -4088,7 +4085,6 @@ async function showCalendarPicker(accessToken) {
   });
   if (!listRes.ok) {
     alert('캘린더 목록을 불러오지 못했습니다.');
-    completeLoading('Google Calendar 동기화 실패');
     return;
   }
   const { items: calendars } = await listRes.json();
@@ -4121,8 +4117,6 @@ async function showCalendarPicker(accessToken) {
     panel.remove();
     await doSync(accessToken, calendarId);
   };
-
-  completeLoading('Google Calendar 동기화');
 }
 
 async function autoSyncToGoogleCalendar() {
