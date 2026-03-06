@@ -4016,15 +4016,18 @@ function isStandaloneMode() {
 // OAuth 리다이렉트 후 URL 해시에서 토큰 추출
 function checkOAuthRedirectToken() {
   const hash = window.location.hash;
+  console.log('[OAuth] hash:', hash);
   if (!hash) return false;
   const params = new URLSearchParams(hash.substring(1));
   const accessToken = params.get('access_token');
   const expiresIn = params.get('expires_in');
   const state = params.get('state');
+  console.log('[OAuth] access_token:', !!accessToken, 'state:', state, 'pending:', localStorage.getItem('gcal_pending_sync'));
   if (accessToken && state === 'gcal_auth') {
     _gcalToken = accessToken;
     _gcalTokenExpiry = Date.now() + (expiresIn ? parseInt(expiresIn) * 1000 : 3600000);
     history.replaceState(null, '', location.pathname + location.search);
+    console.log('[OAuth] token saved, returning true');
     return true;
   }
   return false;
@@ -4052,8 +4055,19 @@ function saveGCalSyncMap(map) {
   localStorage.setItem('gcal_sync_map', JSON.stringify(map));
 }
 
+function isSafariBrowser() {
+  const ua = navigator.userAgent;
+  return /Safari/.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS/.test(ua);
+}
+
 window.syncToGoogleCalendar = async function() {
   startLoading('Google Calendar 동기화');
+  // Safari만 팝업 지원, 나머지(Chrome/Arc 등)는 COOP로 팝업 통신 불가 → redirect
+  if (!isSafariBrowser() && !getCachedToken()) {
+    completeLoading('');
+    redirectToGoogleAuth();
+    return;
+  }
   try {
     const accessToken = await getGCalToken();
     const calendarId = localStorage.getItem('gcal_calendar_id');
@@ -4063,12 +4077,6 @@ window.syncToGoogleCalendar = async function() {
       await showCalendarPicker(accessToken);
     }
   } catch (err) {
-    // 팝업 차단 시 redirect 방식으로 자동 전환
-    if (err === 'popup_failed_to_open' || err === 'popup_closed_by_browser' || err === 'popup_coop_blocked' || err === 'popup_closed_by_user') {
-      completeLoading('');
-      redirectToGoogleAuth();
-      return;
-    }
     alert('Google 인증 실패: ' + (err?.message || err || '알 수 없는 오류'));
     completeLoading('Google Calendar 동기화 실패');
   }
@@ -4260,6 +4268,14 @@ async function doSync(accessToken, calendarId, silent = false) {
     if (updated) msg.push(`수정 ${updated}개`);
     if (deleted) msg.push(`삭제 ${deleted}개`);
     if (failed)  msg.push(`실패 ${failed}개`);
-    alert(msg.join('\n'));
+    const loading = document.getElementById('loading');
+    if (loading) {
+      loading.textContent = '✅';
+      loading.title = msg.join('\n');
+      setTimeout(() => {
+        loading.textContent = '';
+        loading.title = '';
+      }, 5000);
+    }
   }
 }
