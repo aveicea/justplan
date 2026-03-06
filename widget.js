@@ -4142,9 +4142,31 @@ async function autoSyncToGoogleCalendar() {
   if (!calendarId) return;
   try {
     if (typeof google === 'undefined' || !google.accounts) return;
-    const cached = getCachedToken();
-    if (!cached) return; // 캐시된 토큰 없으면 자동 동기화 스킵 (팝업 띄우지 않음)
-    await doSync(cached, calendarId, true);
+    let token = getCachedToken();
+    if (!token) {
+      // 만료됐으면 팝업/리다이렉트 없이 조용히 갱신 시도
+      // Google에 로그인된 상태면 자동 성공, 아니면 null 반환
+      token = await new Promise((resolve) => {
+        try {
+          google.accounts.oauth2.initTokenClient({
+            client_id: GOOGLE_CLIENT_ID,
+            scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+            callback: (res) => {
+              if (!res.error && res.access_token) {
+                saveToken(res.access_token, Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000));
+                resolve(res.access_token);
+              } else {
+                resolve(null);
+              }
+            },
+          }).requestAccessToken({ prompt: 'none' });
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    }
+    if (!token) return;
+    await doSync(token, calendarId, true);
   } catch (e) {
     // 자동 동기화 실패 - 무시
   }
