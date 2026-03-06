@@ -3961,12 +3961,27 @@ function initCalendarDragDrop() {
 
 const GOOGLE_CLIENT_ID = '819141705912-ivusnurnoq47ro3i913um4qelmt31jf2.apps.googleusercontent.com';
 
-// 토큰 캐시 (메모리, 만료 시 자동 재요청)
+// 토큰 캐시 (메모리 + localStorage, 만료 시 자동 재요청)
 let _gcalToken = null;
 let _gcalTokenExpiry = 0;
 
+function saveToken(token, expiry) {
+  _gcalToken = token;
+  _gcalTokenExpiry = expiry;
+  localStorage.setItem('gcal_token', token);
+  localStorage.setItem('gcal_token_expiry', String(expiry));
+}
+
 function getCachedToken() {
-  if (_gcalToken && Date.now() < _gcalTokenExpiry - 60000) return _gcalToken; // 만료 1분 전부터 갱신
+  if (_gcalToken && Date.now() < _gcalTokenExpiry - 60000) return _gcalToken;
+  // 메모리에 없으면 localStorage에서 복원
+  const stored = localStorage.getItem('gcal_token');
+  const expiry = parseInt(localStorage.getItem('gcal_token_expiry') || '0', 10);
+  if (stored && Date.now() < expiry - 60000) {
+    _gcalToken = stored;
+    _gcalTokenExpiry = expiry;
+    return stored;
+  }
   return null;
 }
 
@@ -3977,8 +3992,7 @@ function requestGCalToken(prompt = '', onSuccess, onError) {
     callback: (res) => {
       if (res.error) { onError && onError(res.error); return; }
       if (!res.access_token) { onError && onError('popup_coop_blocked'); return; }
-      _gcalToken = res.access_token;
-      _gcalTokenExpiry = Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000);
+      saveToken(res.access_token, Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000));
       onSuccess(res.access_token);
     },
   }).requestAccessToken({ prompt });
@@ -3994,8 +4008,7 @@ async function getGCalToken(showPopup = true) {
       scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
       callback: (res) => {
         if (!res.error) {
-          _gcalToken = res.access_token;
-          _gcalTokenExpiry = Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000);
+          saveToken(res.access_token, Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000));
           resolve(res.access_token);
         } else if (showPopup) {
           // 조용한 갱신 실패 → 팝업으로 재시도 (최초 로그인 또는 세션 만료)
@@ -4030,8 +4043,7 @@ function checkOAuthRedirectToken() {
   const state = params.get('state');
   console.log('[OAuth] access_token:', !!accessToken, 'state:', state, 'pending:', localStorage.getItem('gcal_pending_sync'));
   if (accessToken && state === 'gcal_auth') {
-    _gcalToken = accessToken;
-    _gcalTokenExpiry = Date.now() + (expiresIn ? parseInt(expiresIn) * 1000 : 3600000);
+    saveToken(accessToken, Date.now() + (expiresIn ? parseInt(expiresIn) * 1000 : 3600000));
     history.replaceState(null, '', location.pathname + location.search);
     console.log('[OAuth] token saved, returning true');
     return true;
