@@ -4130,14 +4130,24 @@ async function doSync(accessToken, calendarId, silent = false) {
     });
   }
 
-  // syncMap: { notionId: { id: googleEventId, hash: string } }
-  // 구버전(문자열) 호환 처리
-  const rawMap = getGCalSyncMap();
-  const syncMap = {};
-  for (const [k, v] of Object.entries(rawMap)) {
-    syncMap[k] = typeof v === 'string' ? { id: v, hash: '' } : v;
-  }
   const eventHash = (e) => `${e.summary}|${e.start.dateTime}|${e.end.dateTime}`;
+
+  // Google Calendar에서 이미 동기화된 이벤트 가져오기 (기기 무관, 중복 방지)
+  const syncMap = {};
+  let gcPageToken = undefined;
+  do {
+    let url = `${calBase}?privateExtendedProperty=source%3Djustplan&maxResults=2500&showDeleted=false`;
+    if (gcPageToken) url += `&pageToken=${gcPageToken}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) break;
+    const data = await res.json();
+    for (const ev of (data.items || [])) {
+      const nid = ev.extendedProperties?.private?.notionId;
+      if (nid) syncMap[nid] = { id: ev.id, hash: ev.extendedProperties?.private?.notionHash || '' };
+    }
+    gcPageToken = data.nextPageToken;
+  } while (gcPageToken);
+
   let created = 0, updated = 0, deleted = 0, failed = 0;
 
   // 1. 이전에 동기화했지만 지금 대상이 아닌 항목 → Google Calendar에서 삭제
@@ -4157,33 +4167,30 @@ async function doSync(accessToken, calendarId, silent = false) {
   for (const [notionId, event] of notionItems) {
     const entry = syncMap[notionId];
     const hash = eventHash(event);
+    const eventWithMeta = {
+      ...event,
+      extendedProperties: { private: { source: 'justplan', notionId, notionHash: hash } },
+    };
     if (entry) {
       // 내용 변경 없으면 스킵
       if (entry.hash === hash) continue;
       // 수정 (PUT)
-      const r = await fetch(`${calBase}/${entry.id}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify(event),
-      });
+      const r = await fetch(`${calBase}/${entry.id}`, { method: 'PUT', headers, body: JSON.stringify(eventWithMeta) });
       if (r.ok) {
-        syncMap[notionId] = { id: entry.id, hash };
         updated++;
       } else if (r.status === 404 || r.status === 410) {
         // Google 캘린더에서 직접 삭제된 경우 → 재생성
-        const cr = await fetch(calBase, { method: 'POST', headers, body: JSON.stringify(event) });
-        if (cr.ok) { syncMap[notionId] = { id: (await cr.json()).id, hash }; created++; } else failed++;
+        const cr = await fetch(calBase, { method: 'POST', headers, body: JSON.stringify(eventWithMeta) });
+        if (!cr.ok) failed++;
       } else {
         failed++;
       }
     } else {
       // 생성 (POST)
-      const r = await fetch(calBase, { method: 'POST', headers, body: JSON.stringify(event) });
-      if (r.ok) { syncMap[notionId] = { id: (await r.json()).id, hash }; created++; } else failed++;
+      const r = await fetch(calBase, { method: 'POST', headers, body: JSON.stringify(eventWithMeta) });
+      if (r.ok) { created++; } else { failed++; }
     }
   }
-
-  saveGCalSyncMap(syncMap);
   completeLoading('Google Calendar 동기화');
   isSyncing = false;
 
