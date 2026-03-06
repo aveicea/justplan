@@ -4052,12 +4052,6 @@ function saveGCalSyncMap(map) {
 }
 
 window.syncToGoogleCalendar = async function() {
-  // 홈 화면(PWA) 모드에서는 팝업이 차단됨 → 리다이렉트 인증 사용
-  // iOS 웹앱에서만 redirect 사용 (팝업 차단됨), macOS 웹앱/일반 브라우저는 팝업 사용
-  if (isIOSWebApp() && !getCachedToken()) {
-    redirectToGoogleAuth();
-    return;
-  }
   startLoading('Google Calendar 동기화');
   try {
     const accessToken = await getGCalToken();
@@ -4068,6 +4062,12 @@ window.syncToGoogleCalendar = async function() {
       await showCalendarPicker(accessToken);
     }
   } catch (err) {
+    // 팝업 차단 시 redirect 방식으로 자동 전환
+    if (err === 'popup_failed_to_open' || err === 'popup_closed_by_browser') {
+      completeLoading('');
+      redirectToGoogleAuth();
+      return;
+    }
     alert('Google 인증 실패: ' + (err?.message || err || '알 수 없는 오류'));
     completeLoading('Google Calendar 동기화 실패');
   }
