@@ -4025,7 +4025,7 @@ function checkOAuthRedirectToken() {
 
 // 팝업 대신 현재 창을 Google 인증 페이지로 리다이렉트 (PWA용)
 function redirectToGoogleAuth() {
-  const redirectUri = location.origin + location.pathname;
+  const redirectUri = location.origin; // 슬래시 없는 깔끔한 형태
   const scope = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events';
   const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' +
     'client_id=' + encodeURIComponent(GOOGLE_CLIENT_ID) +
@@ -4034,7 +4034,7 @@ function redirectToGoogleAuth() {
     '&scope=' + encodeURIComponent(scope) +
     '&state=gcal_auth';
   localStorage.setItem('gcal_pending_sync', '1');
-  const msg = '아래 주소가 Google Cloud Console\n[승인된 리디렉션 URI]에 정확히 등록되어 있나요?\n\n' + redirectUri;
+  const msg = 'Google Cloud Console [승인된 리디렉션 URI]에\n아래 주소가 정확히 등록돼 있는지 확인하세요:\n\n' + redirectUri + '\n\n(슬래시 없는 버전)';
   if (!confirm(msg)) { localStorage.removeItem('gcal_pending_sync'); return; }
   location.href = authUrl;
 }
