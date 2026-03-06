@@ -2023,6 +2023,9 @@ async function fetchAllData() {
     // 책 이름 불러오기
     await fetchBookNames();
 
+    // Google Calendar 자동 동기화 (캘린더가 설정된 경우에만, 폼 열림 여부와 무관)
+    autoSyncToGoogleCalendar();
+
     // 폼이 열려있으면 재렌더링 스킵 (할일 추가/수정 중 튕김 방지)
     if (document.getElementById('new-task-title') || document.getElementById('edit-task-title')) {
       return;
@@ -2034,9 +2037,6 @@ async function fetchAllData() {
     } else {
       renderData();
     }
-
-    // Google Calendar 자동 동기화 (캘린더가 설정된 경우에만)
-    autoSyncToGoogleCalendar();
   } catch (error) {
     console.error('전체 데이터 로드 실패:', error);
   }
