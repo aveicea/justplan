@@ -4268,6 +4268,14 @@ async function doSync(accessToken, calendarId, silent = false) {
     if (updated) msg.push(`수정 ${updated}개`);
     if (deleted) msg.push(`삭제 ${deleted}개`);
     if (failed)  msg.push(`실패 ${failed}개`);
-    alert(msg.join('\n'));
+    const loading = document.getElementById('loading');
+    if (loading) {
+      loading.textContent = '✅';
+      loading.title = msg.join('\n');
+      setTimeout(() => {
+        loading.textContent = '';
+        loading.title = '';
+      }, 5000);
+    }
   }
 }
