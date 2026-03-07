@@ -4099,13 +4099,39 @@ function isSafariBrowser() {
 }
 
 window.syncToGoogleCalendar = async function() {
-  // Safari만 팝업 지원, 나머지(Chrome/Arc 등)는 COOP로 팝업 통신 불가 → redirect
-  if (!isSafariBrowser() && !getCachedToken()) {
-    redirectToGoogleAuth();
-    return;
-  }
   try {
-    const accessToken = await getGCalToken();
+    let accessToken = getCachedToken();
+
+    if (!accessToken) {
+      if (isSafariBrowser()) {
+        // Safari: 팝업으로 조용한 재발급 시도
+        accessToken = await getGCalToken();
+      } else {
+        // Chrome 등: prompt:none으로 조용한 재발급 먼저 시도
+        accessToken = await new Promise((resolve) => {
+          try {
+            google.accounts.oauth2.initTokenClient({
+              client_id: GOOGLE_CLIENT_ID,
+              scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+              callback: (res) => {
+                if (!res.error && res.access_token) {
+                  saveToken(res.access_token, Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000));
+                  resolve(res.access_token);
+                } else {
+                  resolve(null);
+                }
+              },
+            }).requestAccessToken({ prompt: 'none' });
+          } catch (e) { resolve(null); }
+        });
+        // 조용한 재발급 실패 → 리다이렉트
+        if (!accessToken) {
+          redirectToGoogleAuth();
+          return;
+        }
+      }
+    }
+
     const calendarId = localStorage.getItem('gcal_calendar_id');
     if (calendarId) {
       await doSync(accessToken, calendarId);
