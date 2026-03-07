@@ -1805,8 +1805,8 @@ window.updateRating = async function(taskId, value) {
 document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
 
-  // OAuth 리다이렉트 후 토큰 처리 (iOS PWA 모드)
-  const oauthReturned = checkOAuthRedirectToken();
+  // OAuth 리다이렉트 후 토큰 처리
+  const oauthReturned = await checkOAuthRedirectToken();
   // redirect 없이 로드됐는데 pending_sync가 남아있으면 찌꺼기 제거
   if (!oauthReturned) localStorage.removeItem('gcal_pending_sync');
 
@@ -3999,18 +3999,19 @@ function saveToken(token, expiry) {
   }
 }
 
-function silentlyRefreshToken() {
-  if (typeof google === 'undefined' || !google.accounts) return;
+async function silentlyRefreshToken() {
+  const refreshToken = localStorage.getItem('gcal_refresh_token');
+  if (!refreshToken) return;
   try {
-    google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
-      callback: (res) => {
-        if (!res.error && res.access_token) {
-          saveToken(res.access_token, Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000));
-        }
-      },
-    }).requestAccessToken({ prompt: 'none' });
+    const res = await fetch('https://justplan-ashy.vercel.app/api/gcal-refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    const data = await res.json();
+    if (data.access_token) {
+      saveToken(data.access_token, Date.now() + (data.expires_in ? data.expires_in * 1000 : 3600000));
+    }
   } catch (e) { /* 조용히 실패 */ }
 }
 
@@ -4074,33 +4075,42 @@ function isStandaloneMode() {
   return window.navigator.standalone === true;
 }
 
-// OAuth 리다이렉트 후 URL 해시에서 토큰 추출
-function checkOAuthRedirectToken() {
-  const hash = window.location.hash;
-  console.log('[OAuth] hash:', hash);
-  if (!hash) return false;
-  const params = new URLSearchParams(hash.substring(1));
-  const accessToken = params.get('access_token');
-  const expiresIn = params.get('expires_in');
+// OAuth 리다이렉트 후 URL query param에서 code 추출 → 서버에서 토큰 교환
+async function checkOAuthRedirectToken() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
   const state = params.get('state');
-  console.log('[OAuth] access_token:', !!accessToken, 'state:', state, 'pending:', localStorage.getItem('gcal_pending_sync'));
-  if (accessToken && state === 'gcal_auth') {
-    saveToken(accessToken, Date.now() + (expiresIn ? parseInt(expiresIn) * 1000 : 3600000));
-    history.replaceState(null, '', location.pathname + location.search);
-    console.log('[OAuth] token saved, returning true');
+  if (!code || state !== 'gcal_auth') return false;
+  history.replaceState(null, '', location.pathname);
+  try {
+    const redirectUri = location.origin + location.pathname.replace(/\/$/, '');
+    const res = await fetch('https://justplan-ashy.vercel.app/api/gcal-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, redirect_uri: redirectUri }),
+    });
+    const data = await res.json();
+    if (data.access_token) {
+      saveToken(data.access_token, Date.now() + (data.expires_in ? data.expires_in * 1000 : 3600000));
+      if (data.refresh_token) localStorage.setItem('gcal_refresh_token', data.refresh_token);
+    }
     return true;
+  } catch (e) {
+    console.error('[OAuth] token exchange failed', e);
+    return false;
   }
-  return false;
 }
 
 // 팝업 대신 현재 창을 Google 인증 페이지로 리다이렉트 (PWA용)
 function redirectToGoogleAuth() {
-  const redirectUri = location.origin + location.pathname.replace(/\/$/, ''); // 경로 포함, 끝 슬래시 제거
+  const redirectUri = location.origin + location.pathname.replace(/\/$/, '');
   const scope = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events';
   const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' +
     'client_id=' + encodeURIComponent(GOOGLE_CLIENT_ID) +
     '&redirect_uri=' + encodeURIComponent(redirectUri) +
-    '&response_type=token' +
+    '&response_type=code' +
+    '&access_type=offline' +
+    '&prompt=consent' +
     '&scope=' + encodeURIComponent(scope) +
     '&state=gcal_auth';
   localStorage.setItem('gcal_pending_sync', '1');
@@ -4125,32 +4135,19 @@ window.syncToGoogleCalendar = async function() {
     let accessToken = getCachedToken();
 
     if (!accessToken) {
+      // refresh_token으로 조용히 갱신 시도
+      await silentlyRefreshToken();
+      accessToken = getCachedToken();
+    }
+
+    if (!accessToken) {
       if (isSafariBrowser()) {
-        // Safari: 팝업으로 조용한 재발급 시도
+        // Safari: 팝업으로 재발급
         accessToken = await getGCalToken();
       } else {
-        // Chrome 등: prompt:none으로 조용한 재발급 먼저 시도
-        accessToken = await new Promise((resolve) => {
-          try {
-            google.accounts.oauth2.initTokenClient({
-              client_id: GOOGLE_CLIENT_ID,
-              scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
-              callback: (res) => {
-                if (!res.error && res.access_token) {
-                  saveToken(res.access_token, Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000));
-                  resolve(res.access_token);
-                } else {
-                  resolve(null);
-                }
-              },
-            }).requestAccessToken({ prompt: 'none' });
-          } catch (e) { resolve(null); }
-        });
-        // 조용한 재발급 실패 → 리다이렉트
-        if (!accessToken) {
-          redirectToGoogleAuth();
-          return;
-        }
+        // Chrome 등: 리다이렉트
+        redirectToGoogleAuth();
+        return;
       }
     }
 
