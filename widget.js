@@ -3984,12 +3984,34 @@ const GOOGLE_CLIENT_ID = '819141705912-ivusnurnoq47ro3i913um4qelmt31jf2.apps.goo
 // 토큰 캐시 (메모리 + localStorage, 만료 시 자동 재요청)
 let _gcalToken = null;
 let _gcalTokenExpiry = 0;
+let _gcalRefreshTimer = null;
 
 function saveToken(token, expiry) {
   _gcalToken = token;
   _gcalTokenExpiry = expiry;
   localStorage.setItem('gcal_token', token);
   localStorage.setItem('gcal_token_expiry', String(expiry));
+  // 만료 5분 전에 자동으로 조용히 갱신
+  if (_gcalRefreshTimer) clearTimeout(_gcalRefreshTimer);
+  const refreshIn = (expiry - Date.now()) - 5 * 60 * 1000;
+  if (refreshIn > 0) {
+    _gcalRefreshTimer = setTimeout(() => silentlyRefreshToken(), refreshIn);
+  }
+}
+
+function silentlyRefreshToken() {
+  if (typeof google === 'undefined' || !google.accounts) return;
+  try {
+    google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+      callback: (res) => {
+        if (!res.error && res.access_token) {
+          saveToken(res.access_token, Date.now() + (res.expires_in ? res.expires_in * 1000 : 3600000));
+        }
+      },
+    }).requestAccessToken({ prompt: 'none' });
+  } catch (e) { /* 조용히 실패 */ }
 }
 
 function getCachedToken() {
