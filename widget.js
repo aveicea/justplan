@@ -2299,7 +2299,7 @@ function renderTimelineView() {
       const dateStart = task.properties?.['날짜']?.date?.start || '';
 
       html += `
-        <div class="task-item ${completed ? 'completed' : ''}">
+        <div class="task-item ${completed ? 'completed' : ''} ${isScheduleBook ? 'schedule' : ''}">
           <div style="display: flex; justify-content: space-between; align-items: flex-start; ${isScheduleBook ? '' : 'margin-bottom: 8px;'}">
             <div class="task-title ${completed ? 'completed' : ''}" style="flex: 1; cursor: pointer;" onclick="editTaskReturnView='planner'; editTask('${task.id}')">${title}</div>
             <div class="checkbox ${completed ? 'checked' : ''}" onclick="toggleComplete('${task.id}', ${!completed})"
