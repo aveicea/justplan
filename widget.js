@@ -2276,29 +2276,35 @@ function renderTimelineView() {
       const completed = task.properties?.['완료']?.checkbox;
       const rating = task.properties?.['(੭•̀ᴗ•̀)੭']?.select?.name || '';
       const targetTime = task.properties?.['목표 시간']?.number || 0;
-      
+
+      // 책이름이 "일정"인지 확인
+      const bookRelation = task.properties?.['책']?.relation?.[0];
+      const taskBookName = bookRelation && bookNames[bookRelation.id] ? bookNames[bookRelation.id] : '';
+      const isScheduleBook = taskBookName === '일정';
+
       // 끝시간 없으면 실제 0분
       let actualTime = 0;
       let diffStr = '';
-      
+
       if (end) {
         actualTime = calcActualMinutes(task);
         const diff = actualTime - targetTime;
         diffStr = diff === 0 ? '' : `${diff > 0 ? '+' : ''}${diff}`;
       }
-      
+
       const dateStart = task.properties?.['날짜']?.date?.start || '';
 
       html += `
         <div class="task-item ${completed ? 'completed' : ''}">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; ${isScheduleBook ? '' : 'margin-bottom: 8px;'}">
             <div class="task-title ${completed ? 'completed' : ''}" style="flex: 1; cursor: pointer;" onclick="editTaskReturnView='planner'; editTask('${task.id}')">${title}</div>
-            <div class="checkbox ${completed ? 'checked' : ''}" onclick="toggleComplete('${task.id}', ${!completed})" 
+            <div class="checkbox ${completed ? 'checked' : ''}" onclick="toggleComplete('${task.id}', ${!completed})"
               style="margin-left: 12px; flex-shrink: 0;">
               ${completed ? '✓' : ''}
             </div>
           </div>
-          
+
+          ${isScheduleBook ? '' : `
           <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
             <input type="text" value="${start}" placeholder="시작"
               onblur="updateTime('${task.id}', '시작', this.value, this)"
@@ -2307,8 +2313,8 @@ function renderTimelineView() {
             <input type="text" value="${end}" placeholder="끝"
               onblur="updateTime('${task.id}', '끝', this.value, this)"
               style="width: 50px; padding: 4px; border: 1px solid #e5e5e7; border-radius: 4px; text-align: center; font-size: 11px;">
-            
-            <select onchange="updateRating('${task.id}', this.value)" 
+
+            <select onchange="updateRating('${task.id}', this.value)"
               style="margin-left: 8px; padding: 4px 8px; border: 1px solid #e5e5e7; border-radius: 4px; font-size: 11px; cursor: pointer; background: #f5f5f7; color: ${rating ? '#333' : '#999'};">
               <option value="" ${!rating ? 'selected' : ''}></option>
               <option value="..." ${rating === '...' ? 'selected' : ''}>...</option>
@@ -2318,7 +2324,7 @@ function renderTimelineView() {
               <option value="🌟 🌟 🌟" ${rating === '🌟 🌟 🌟' ? 'selected' : ''}>🌟 🌟 🌟</option>
             </select>
           </div>
-          
+
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div style="font-size: 11px; color: #86868b;">
               목표 ${formatMinutesToTime(targetTime)} / 실제 ${formatMinutesToTime(actualTime)}${end ? (() => {
@@ -2342,6 +2348,7 @@ function renderTimelineView() {
               </div>
             ` : ''}
           </div>
+          `}
         </div>
       `;
     });
