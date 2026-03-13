@@ -10,6 +10,7 @@ let currentData = null;
 let calendarData = null;
 let ddayData = null;
 let bookNames = {};
+let bookNamesLoaded = false;
 let activeBookIds = new Set();
 let currentDate = new Date();
 currentDate.setHours(0, 0, 0, 0); // 초기화 시 시간을 00:00:00으로 설정
@@ -1816,6 +1817,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   fetchDDayData().then(() => {
     autoSelectClosestDDay();
     if (!document.getElementById('new-task-title') && !document.getElementById('edit-task-title')) {
+      if (!bookNamesLoaded) return; // 책이름 로드 전이면 fetchData()가 렌더링 담당
       if (calendarViewMode) {
         renderCalendarView();
       } else {
@@ -2094,8 +2096,10 @@ async function fetchBookNames() {
         }
       });
     }
+    bookNamesLoaded = true;
   } catch (error) {
     console.warn('책 목록 로드 실패:', error);
+    bookNamesLoaded = true;
   }
 }
 
