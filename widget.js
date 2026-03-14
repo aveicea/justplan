@@ -806,54 +806,59 @@ window.duplicateTask = async function(taskId) {
   if (!task) return;
 
   const originalTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '';
-
   startLoading(`${originalTitle} 당일 복제`);
 
+  // (숫자) 찾아서 증가
+  const numberMatch = originalTitle.match(/\((\d+)\)$/);
+  let newTitle;
+  if (numberMatch) {
+    const num = parseInt(numberMatch[1]);
+    newTitle = originalTitle.replace(/\(\d+\)$/, `(${num + 1})`);
+  } else {
+    newTitle = originalTitle + ' (2)';
+  }
+
+  const bookRelation = task.properties?.['책']?.relation?.[0];
+  const targetTime = task.properties?.['목표 시간']?.number;
+  const dateStart = task.properties?.['날짜']?.date?.start;
+  const plannerRelation = task.properties?.['PLANNER']?.relation;
+  const priority = task.properties?.['우선순위']?.select?.name;
+
+  // 임시 ID로 새 항목 즉시 생성
+  const tempId = 'temp-' + Date.now();
+  const tempTask = {
+    id: tempId,
+    created_time: new Date().toISOString(),
+    properties: {
+      '범위': { title: [{ plain_text: newTitle, text: { content: newTitle } }] },
+      '날짜': { date: { start: dateStart || '' } },
+      '완료': { checkbox: false },
+      '목표 시간': { number: targetTime || null },
+      '시작': { rich_text: [] },
+      '끝': { rich_text: [] },
+      '(੭•̀ᴗ•̀)੭': { select: null },
+      '우선순위': priority ? { select: { name: priority } } : { select: null },
+      '책': { relation: bookRelation ? [bookRelation] : [] },
+      'PLANNER': plannerRelation ? { relation: plannerRelation } : { relation: [] }
+    }
+  };
+
+  // 원본 완료 처리 (로컬 즉시)
+  task.properties['완료'].checkbox = true;
+  currentData.results.unshift(tempTask);
+  renderData();
+
+  // 백그라운드에서 API 호출
   pendingUpdates++;
   try {
-
-    // (숫자) 찾아서 증가
-    const numberMatch = originalTitle.match(/\((\d+)\)$/);
-    let newTitle;
-    if (numberMatch) {
-      const num = parseInt(numberMatch[1]);
-      newTitle = originalTitle.replace(/\(\d+\)$/, `(${num + 1})`);
-    } else {
-      newTitle = originalTitle + ' (2)';
-    }
-
-    const bookRelation = task.properties?.['책']?.relation?.[0];
-    const targetTime = task.properties?.['목표 시간']?.number;
-    const dateStart = task.properties?.['날짜']?.date?.start;
-    const plannerRelation = task.properties?.['PLANNER']?.relation;
-    // 시작/끝 시간은 복제하지 않음
-
     const properties = {
-      '범위': {
-        title: [{ text: { content: newTitle } }]
-      },
+      '범위': { title: [{ text: { content: newTitle } }] },
       '완료': { checkbox: false }
     };
-
-    if (bookRelation) {
-      properties['책'] = { relation: [{ id: bookRelation.id }] };
-    }
-
-    if (targetTime) {
-      properties['목표 시간'] = { number: targetTime };
-    }
-
-    if (dateStart) {
-      properties['날짜'] = { date: { start: dateStart } };
-    }
-
-    // 우선순위 복사
-    const priority = task.properties?.['우선순위']?.select?.name;
-    if (priority) {
-      properties['우선순위'] = { select: { name: priority } };
-    }
-
-    // PLANNER 관계형 복사
+    if (bookRelation) properties['책'] = { relation: [{ id: bookRelation.id }] };
+    if (targetTime) properties['목표 시간'] = { number: targetTime };
+    if (dateStart) properties['날짜'] = { date: { start: dateStart } };
+    if (priority) properties['우선순위'] = { select: { name: priority } };
     if (plannerRelation && plannerRelation.length > 0) {
       properties['PLANNER'] = { relation: plannerRelation.map(r => ({ id: r.id })) };
     }
@@ -866,35 +871,36 @@ window.duplicateTask = async function(taskId) {
         'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        parent: { database_id: DATABASE_ID },
-        properties: properties
-      })
+      body: JSON.stringify({ parent: { database_id: DATABASE_ID }, properties })
     });
 
     if (!response.ok) throw new Error('복제 실패');
 
-    // 원본 항목을 완료 처리
+    // temp를 실제 Notion 항목으로 교체
+    const newTask = await response.json();
+    const idx = currentData.results.findIndex(t => t.id === tempId);
+    if (idx !== -1) currentData.results[idx] = newTask;
+
+    // 원본 완료 처리 API
     const updateUrl = `https://api.notion.com/v1/pages/${taskId}`;
-    await fetch(`${CORS_PROXY}${encodeURIComponent(updateUrl)}`, {
+    fetch(`${CORS_PROXY}${encodeURIComponent(updateUrl)}`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${NOTION_API_KEY}`,
         'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        properties: {
-          '완료': { checkbox: true }
-        }
-      })
+      body: JSON.stringify({ properties: { '완료': { checkbox: true } } })
     });
 
-    // 즉시 UI 업데이트
-    await fetchAllData();
     completeLoading(`${originalTitle} 당일 복제`);
+    autoSyncToGoogleCalendar();
   } catch (error) {
     console.error('복제 실패:', error);
+    // 롤백
+    currentData.results = currentData.results.filter(t => t.id !== tempId);
+    task.properties['완료'].checkbox = false;
+    renderData();
     completeLoading(`${originalTitle} 당일 복제 실패`);
   } finally {
     pendingUpdates--;
@@ -2398,16 +2404,8 @@ function renderTaskView() {
     });
   };
 
-  let allTasks;
-  if (isPastDate) {
-    // 과거 날짜: 완료/미완료 구분 없이 그냥 정렬
-    allTasks = sortByPriority(dayTasks);
-  } else {
-    // 오늘/미래: 완료 안 한 일 먼저
-    const incompleteTasks = dayTasks.filter(t => !t.properties?.['완료']?.checkbox);
-    const completedTasks = dayTasks.filter(t => t.properties?.['완료']?.checkbox);
-    allTasks = [...sortByPriority(incompleteTasks), ...sortByPriority(completedTasks)];
-  }
+  // 완료 여부 무관하게 우선순위로만 정렬
+  const allTasks = sortByPriority(dayTasks);
 
   // 시간 통계 계산
   let totalTarget = 0;
@@ -2944,65 +2942,62 @@ window.duplicateAllIncompleteTasks = async function() {
       return dateStart === targetDateStr && !completed;
     });
 
-    if (incompleteTasks.length === 0) {
-      return;
-    }
+    if (incompleteTasks.length === 0) return;
 
-    // 모든 할일을 복제 (원본 완료 처리 없이)
+    // 다음날 날짜 계산
+    const nextDay = new Date(targetDateStr);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const nextDayStr = formatDateToLocalString(nextDay);
+
+    // 임시 항목 즉시 생성 후 렌더
+    const tempItems = [];
     for (const task of incompleteTasks) {
       const originalTitle = task.properties?.['범위']?.title?.[0]?.plain_text || '';
-
-      startLoading(`${originalTitle} 날짜 복제`);
-
-      // ' 붙이기
       const newTitle = originalTitle + "'";
-
       const bookRelation = task.properties?.['책']?.relation?.[0];
       const targetTime = task.properties?.['목표 시간']?.number;
-      const dateStart = task.properties?.['날짜']?.date?.start;
+      const priority = task.properties?.['우선순위']?.select?.name;
       const plannerRelation = task.properties?.['PLANNER']?.relation;
 
-      // 다음날로 날짜 설정
-      let nextDayStr = dateStart;
-      if (dateStart) {
-        const currentTaskDate = new Date(dateStart);
-        currentTaskDate.setDate(currentTaskDate.getDate() + 1);
-        nextDayStr = formatDateToLocalString(currentTaskDate);
-      }
-
-      const properties = {
-        '범위': {
-          title: [{ text: { content: newTitle } }]
-        },
-        '완료': { checkbox: false }
+      const tempId = 'temp-' + Date.now() + '-' + Math.random();
+      const tempTask = {
+        id: tempId,
+        created_time: new Date().toISOString(),
+        properties: {
+          '범위': { title: [{ plain_text: newTitle, text: { content: newTitle } }] },
+          '날짜': { date: { start: nextDayStr } },
+          '완료': { checkbox: false },
+          '목표 시간': { number: targetTime || null },
+          '시작': { rich_text: [] },
+          '끝': { rich_text: [] },
+          '(੭•̀ᴗ•̀)੭': { select: null },
+          '우선순위': priority ? { select: { name: priority } } : { select: null },
+          '책': { relation: bookRelation ? [bookRelation] : [] },
+          'PLANNER': plannerRelation ? { relation: plannerRelation } : { relation: [] }
+        }
       };
+      tempItems.push({ tempId, tempTask, task, newTitle, bookRelation, targetTime, priority, plannerRelation, originalTitle });
+      currentData.results.unshift(tempTask);
+    }
+    renderData();
 
-      if (bookRelation) {
-        properties['책'] = { relation: [{ id: bookRelation.id }] };
-      }
-
-      if (targetTime) {
-        properties['목표 시간'] = { number: targetTime };
-      }
-
-      if (nextDayStr) {
-        properties['날짜'] = { date: { start: nextDayStr } };
-      }
-
-      // 우선순위 복사
-      const priority = task.properties?.['우선순위']?.select?.name;
-      if (priority) {
-        properties['우선순위'] = { select: { name: priority } };
-      }
-
-      // PLANNER 관계형 복사
-      if (plannerRelation && plannerRelation.length > 0) {
-        properties['PLANNER'] = { relation: plannerRelation.map(r => ({ id: r.id })) };
-      }
-
-      // 복제 생성
+    // 백그라운드 API 호출
+    for (const { tempId, tempTask, task, newTitle, bookRelation, targetTime, priority, plannerRelation, originalTitle } of tempItems) {
+      startLoading(`${originalTitle} 날짜 복제`);
       pendingUpdates++;
       try {
+        const properties = {
+          '범위': { title: [{ text: { content: newTitle } }] },
+          '완료': { checkbox: false },
+          '날짜': { date: { start: nextDayStr } }
+        };
+        if (bookRelation) properties['책'] = { relation: [{ id: bookRelation.id }] };
+        if (targetTime) properties['목표 시간'] = { number: targetTime };
+        if (priority) properties['우선순위'] = { select: { name: priority } };
+        if (plannerRelation && plannerRelation.length > 0) {
+          properties['PLANNER'] = { relation: plannerRelation.map(r => ({ id: r.id })) };
+        }
+
         const notionUrl = 'https://api.notion.com/v1/pages';
         const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
           method: 'POST',
@@ -3011,27 +3006,26 @@ window.duplicateAllIncompleteTasks = async function() {
             'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            parent: { database_id: DATABASE_ID },
-            properties: properties
-          })
+          body: JSON.stringify({ parent: { database_id: DATABASE_ID }, properties })
         });
 
         if (response.ok) {
+          const newTask = await response.json();
+          const idx = currentData.results.findIndex(t => t.id === tempId);
+          if (idx !== -1) currentData.results[idx] = newTask;
           completeLoading(`${originalTitle} 날짜 복제`);
         } else {
+          currentData.results = currentData.results.filter(t => t.id !== tempId);
           completeLoading(`${originalTitle} 날짜 복제 실패`);
         }
       } catch (error) {
         console.error('복제 실패:', error);
+        currentData.results = currentData.results.filter(t => t.id !== tempId);
         completeLoading(`${originalTitle} 날짜 복제 실패`);
       } finally {
         pendingUpdates--;
       }
     }
-
-    // 즉시 UI 업데이트
-    await fetchAllData();
   } catch (error) {
     console.error('전체 복제 실패:', error);
   } finally {
