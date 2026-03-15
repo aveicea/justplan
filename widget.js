@@ -1060,7 +1060,8 @@ window.deleteTask = async function(taskId) {
     before: task.properties
   });
 
-  // 바로 창 닫기
+  // 즉시 로컬에서 제거 후 렌더
+  currentData.results = currentData.results.filter(t => t.id !== taskId);
   renderData();
 
   // 백그라운드에서 삭제
@@ -1080,9 +1081,13 @@ window.deleteTask = async function(taskId) {
         })
       });
 
-      if (!response.ok) throw new Error('삭제 실패');
+      if (!response.ok) {
+        // 실패 시 롤백
+        currentData.results.unshift(task);
+        renderData();
+        throw new Error('삭제 실패');
+      }
 
-      await fetchAllData();
       completeLoading(`${taskTitle} 삭제`);
     } catch (error) {
       console.error('삭제 실패:', error);
