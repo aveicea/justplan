@@ -2226,8 +2226,8 @@ function renderTimelineView() {
 
   let sortedTasks;
   if (isPastDate) {
-    // 과거 날짜: 완료/미완료 구분 없이 그냥 정렬
-    sortedTasks = sortTasks(dayTasks);
+    // 과거 날짜: 완료 먼저, 미완료 아래
+    sortedTasks = [...sortTasks(completedTasks), ...sortTasks(incompleteTasks)];
   } else {
     // 오늘/미래: 완료 안 한 일 먼저, 그 다음 완료한 일
     sortedTasks = [...sortTasks(incompleteTasks), ...sortTasks(completedTasks)];
