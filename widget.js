@@ -1206,51 +1206,49 @@ window.confirmAddTask = async function() {
 
   startLoading(`${title} 추가`);
 
+  const todayDate = formatDateToLocalString(currentDate);
+  const bookRelation = bookSelect.value ? { id: bookSelect.value } : null;
+  const targetTime = timeInput.value ? parseInt(timeInput.value) : null;
+
+  const sameDayTasks = currentData.results.filter(t => t.properties?.['날짜']?.date?.start === todayDate);
+  const existingPriorities = sameDayTasks
+    .map(t => t.properties?.['우선순위']?.select?.name)
+    .filter(Boolean)
+    .map(p => parseInt(p.replace(/\D/g, '')));
+  const nextPriority = existingPriorities.length > 0 ? Math.max(...existingPriorities) + 1 : 1;
+  const priorityOrder = ['1st','2nd','3rd','4th','5th','6th','7th','8th','9th','10th','11th','12th','13th','14th','15th','16th','17th','18th','19th','20th'];
+  const priorityName = nextPriority <= 20 ? priorityOrder[nextPriority - 1] : null;
+
+  // 즉시 임시 항목 추가 + 폼 닫기
+  const tempId = 'temp-' + Date.now();
+  const tempTask = {
+    id: tempId,
+    created_time: new Date().toISOString(),
+    properties: {
+      '범위': { title: [{ plain_text: title, text: { content: title } }] },
+      '날짜': { date: { start: todayDate } },
+      '완료': { checkbox: false },
+      '목표 시간': { number: targetTime },
+      '시작': { rich_text: [] },
+      '끝': { rich_text: [] },
+      '(੭•̀ᴗ•̀)੭': { select: null },
+      '우선순위': priorityName ? { select: { name: priorityName } } : { select: null },
+      '책': { relation: bookRelation ? [bookRelation] : [] }
+    }
+  };
+  currentData.results.unshift(tempTask);
+  renderData();
+
   pendingUpdates++;
   try {
-    const todayDate = currentDate.toISOString().split('T')[0];
-
     const properties = {
-      '범위': {
-        title: [{ text: { content: title } }]
-      },
-      '날짜': {
-        date: { start: todayDate }
-      },
+      '범위': { title: [{ text: { content: title } }] },
+      '날짜': { date: { start: todayDate } },
       '완료': { checkbox: false }
     };
-
-    if (bookSelect.value) {
-      properties['책'] = {
-        relation: [{ id: bookSelect.value }]
-      };
-    }
-
-    if (timeInput.value) {
-      properties['목표 시간'] = {
-        number: parseInt(timeInput.value)
-      };
-    }
-
-    const sameDayTasks = currentData.results.filter(t => {
-      const dateStart = t.properties?.['날짜']?.date?.start;
-      return dateStart && dateStart === todayDate;
-    });
-    const existingPriorities = sameDayTasks
-      .map(t => t.properties?.['우선순위']?.select?.name)
-      .filter(Boolean)
-      .map(p => parseInt(p.replace(/\D/g, '')));
-
-    const nextPriority = existingPriorities.length > 0
-      ? Math.max(...existingPriorities) + 1
-      : 1;
-
-    if (nextPriority <= 20) {
-      const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th'];
-      properties['우선순위'] = {
-        select: { name: priorityOrder[nextPriority - 1] }
-      };
-    }
+    if (bookRelation) properties['책'] = { relation: [{ id: bookRelation.id }] };
+    if (targetTime) properties['목표 시간'] = { number: targetTime };
+    if (priorityName) properties['우선순위'] = { select: { name: priorityName } };
 
     const notionUrl = 'https://api.notion.com/v1/pages';
     const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
@@ -1260,22 +1258,21 @@ window.confirmAddTask = async function() {
         'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        parent: { database_id: DATABASE_ID },
-        properties: properties
-      })
+      body: JSON.stringify({ parent: { database_id: DATABASE_ID }, properties })
     });
 
     const result = await response.json();
+    if (!response.ok) throw new Error(result.message || '추가 실패');
 
-    if (!response.ok) {
-      throw new Error(result.message || '추가 실패');
-    }
+    // 임시 항목을 실제 항목으로 교체
+    const idx = currentData.results.findIndex(t => t.id === tempId);
+    if (idx !== -1) currentData.results[idx] = result;
 
-    await fetchAllData();
     completeLoading(`${title} 추가`);
   } catch (error) {
     console.error('할 일 추가 오류:', error);
+    currentData.results = currentData.results.filter(t => t.id !== tempId);
+    renderData();
     completeLoading(`${title} 추가 실패`);
   } finally {
     pendingUpdates--;
@@ -1299,51 +1296,53 @@ window.confirmAddTaskForDate = async function() {
 
   startLoading(`${title} 추가`);
 
+  const targetDate = dateInput.value;
+  const bookRelation = bookSelect.value ? { id: bookSelect.value } : null;
+  const targetTime = timeInput.value ? parseInt(timeInput.value) : null;
+
+  const sameDayTasks = currentData.results.filter(t => t.properties?.['날짜']?.date?.start === targetDate);
+  const existingPriorities = sameDayTasks
+    .map(t => t.properties?.['우선순위']?.select?.name)
+    .filter(Boolean)
+    .map(p => parseInt(p.replace(/\D/g, '')));
+  const nextPriority = existingPriorities.length > 0 ? Math.max(...existingPriorities) + 1 : 1;
+  const priorityOrder = ['1st','2nd','3rd','4th','5th','6th','7th','8th','9th','10th','11th','12th','13th','14th','15th','16th','17th','18th','19th','20th'];
+  const priorityName = nextPriority <= 20 ? priorityOrder[nextPriority - 1] : null;
+
+  // 즉시 임시 항목 추가 + 폼 닫기
+  const tempId = 'temp-' + Date.now();
+  const tempTask = {
+    id: tempId,
+    created_time: new Date().toISOString(),
+    properties: {
+      '범위': { title: [{ plain_text: title, text: { content: title } }] },
+      '날짜': { date: { start: targetDate } },
+      '완료': { checkbox: false },
+      '목표 시간': { number: targetTime },
+      '시작': { rich_text: [] },
+      '끝': { rich_text: [] },
+      '(੭•̀ᴗ•̀)੭': { select: null },
+      '우선순위': priorityName ? { select: { name: priorityName } } : { select: null },
+      '책': { relation: bookRelation ? [bookRelation] : [] }
+    }
+  };
+  currentData.results.unshift(tempTask);
+  if (addTaskReturnView === 'list') {
+    renderCalendarView();
+  } else {
+    renderData();
+  }
+
   pendingUpdates++;
   try {
-    const targetDate = dateInput.value; // hidden input에서 날짜 가져오기
-
     const properties = {
-      '범위': {
-        title: [{ text: { content: title } }]
-      },
-      '날짜': {
-        date: { start: targetDate }
-      },
+      '범위': { title: [{ text: { content: title } }] },
+      '날짜': { date: { start: targetDate } },
       '완료': { checkbox: false }
     };
-
-    if (bookSelect.value) {
-      properties['책'] = {
-        relation: [{ id: bookSelect.value }]
-      };
-    }
-
-    if (timeInput.value) {
-      properties['목표 시간'] = {
-        number: parseInt(timeInput.value)
-      };
-    }
-
-    const sameDayTasks = currentData.results.filter(t => {
-      const dateStart = t.properties?.['날짜']?.date?.start;
-      return dateStart && dateStart === targetDate;
-    });
-    const existingPriorities = sameDayTasks
-      .map(t => t.properties?.['우선순위']?.select?.name)
-      .filter(Boolean)
-      .map(p => parseInt(p.replace(/\D/g, '')));
-
-    const nextPriority = existingPriorities.length > 0
-      ? Math.max(...existingPriorities) + 1
-      : 1;
-
-    if (nextPriority <= 20) {
-      const priorityOrder = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th', '16th', '17th', '18th', '19th', '20th'];
-      properties['우선순위'] = {
-        select: { name: priorityOrder[nextPriority - 1] }
-      };
-    }
+    if (bookRelation) properties['책'] = { relation: [{ id: bookRelation.id }] };
+    if (targetTime) properties['목표 시간'] = { number: targetTime };
+    if (priorityName) properties['우선순위'] = { select: { name: priorityName } };
 
     const notionUrl = 'https://api.notion.com/v1/pages';
     const response = await fetch(`${CORS_PROXY}${encodeURIComponent(notionUrl)}`, {
@@ -1353,30 +1352,21 @@ window.confirmAddTaskForDate = async function() {
         'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        parent: { database_id: DATABASE_ID },
-        properties: properties
-      })
+      body: JSON.stringify({ parent: { database_id: DATABASE_ID }, properties })
     });
 
     const result = await response.json();
+    if (!response.ok) throw new Error(result.message || '추가 실패');
 
-    if (!response.ok) {
-      throw new Error(result.message || '추가 실패');
-    }
-
-    await fetchAllData();
-
-    // 추가 후 적절한 뷰로 돌아가기
-    if (addTaskReturnView === 'list') {
-      renderCalendarView();
-    } else {
-      renderData();
-    }
+    // 임시 항목을 실제 항목으로 교체
+    const idx = currentData.results.findIndex(t => t.id === tempId);
+    if (idx !== -1) currentData.results[idx] = result;
 
     completeLoading(`${title} 추가`);
   } catch (error) {
     console.error('할 일 추가 오류:', error);
+    currentData.results = currentData.results.filter(t => t.id !== tempId);
+    if (addTaskReturnView === 'list') renderCalendarView(); else renderData();
     completeLoading(`${title} 추가 실패`);
   } finally {
     pendingUpdates--;
