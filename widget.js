@@ -1883,9 +1883,10 @@ function setupEventListeners() {
       popup.textContent = logText;
       document.body.appendChild(popup);
       setTimeout(() => popup.remove(), 5000);
-      document.addEventListener('click', (e) => {
-        if (!popup.contains(e.target) && e.target !== loading) popup.remove();
-      }, { once: true });
+      setTimeout(() => {
+        const closePopup = () => { popup.remove(); document.removeEventListener('click', closePopup); };
+        document.addEventListener('click', closePopup);
+      }, 0);
     });
   }
   if (tooltip) {
