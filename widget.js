@@ -4262,6 +4262,7 @@ async function doSync(accessToken, calendarId, silent = false) {
     if (!title || !dateStr || !start || !end) continue;
     const bookRelation = item.properties?.['책']?.relation?.[0];
     const bookName = bookRelation && bookNames[bookRelation.id] ? bookNames[bookRelation.id] : '';
+    if (bookName === '일정') continue; // 책이름이 "일정"인 항목은 구글 캘린더 동기화 제외
     const summary = bookName ? `📖 공부 | [${bookName}] ${title}` : `📖 공부 | ${title}`;
     // 00~06시 일정은 Google Calendar에서 다음날 날짜로 표시 (시간은 그대로)
     const startHour = parseInt(start.padStart(5, '0').split(':')[0], 10);
